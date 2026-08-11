@@ -205,6 +205,7 @@ footer{text-align:center;padding:24px 0 30px;font-family:var(--mono);font-size:1
         <span class="turn-num" id="turnNumBig">01</span>
       </div>
       <div class="battle-log" id="battleLog"></div>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--text-mut);margin-top:4px;">damage is bidirectional — every confirmed turn, both PLAYER and OPPONENT active Pokémon act and can be hit</div>
 
       <div class="state-strip">
         <div>
@@ -219,7 +220,7 @@ footer{text-align:center;padding:24px 0 30px;font-family:var(--mono);font-size:1
     </div>
 
     <div class="panel">
-      <div class="panel-title">ACTION SELECTION</div>
+      <div class="panel-title">ACTION SELECTION <span style="color:var(--text-mut);font-weight:400;text-transform:none;">— you control PLAYER only. Opponent moves automatically (random policy) on Confirm.</span></div>
       <div id="actionBlocks"></div>
       <div class="btn-row">
         <button class="btn btn-primary" id="confirmBtn" disabled>[ CONFIRM ACTIONS ]</button>
@@ -254,6 +255,9 @@ footer{text-align:center;padding:24px 0 30px;font-family:var(--mono);font-size:1
     <button class="btn btn-primary" id="runSimBtn" style="width:100%;">▶ RUN SIMULATION</button>
     <div class="sim-console" id="simConsole">awaiting simulation...</div>
 
+    <div class="mini-label">HOW THIS WAS CALCULATED</div>
+    <div class="stat-line" id="mcExplain" style="line-height:1.7;">Run a simulation to see the derivation for every number on this panel.</div>
+
     <div class="mini-label">CANDIDATE ACTIONS</div>
     <div class="cand-block" id="candBlockP1"></div>
     <div class="cand-block" id="candBlockP2" style="margin-top:10px;"></div>
@@ -264,6 +268,9 @@ footer{text-align:center;padding:24px 0 30px;font-family:var(--mono);font-size:1
     <div class="compare-row" style="margin-top:6px;"><span>GREEDY DAMAGE</span><b id="cmpGreedy">—</b></div>
     <div class="compare-bar-wrap"><div class="compare-bar greedy" id="cmpGreedyBar" style="width:0%;"></div></div>
     <div class="delta-line" id="cmpDelta">DELTA — pp</div>
+
+    <div class="mini-label">MOVE VALUE LOG — CHOSEN VS. BEST ALTERNATIVE</div>
+    <div id="moveValueLog" style="font-family:var(--mono);font-size:10.5px;color:var(--text-dim);">no moves played yet — run a simulation, then confirm actions to build this log.</div>
 
     <div class="mini-label">ESTIMATE CONVERGENCE</div>
     <canvas id="convergenceChart" width="320" height="130"></canvas>
@@ -386,6 +393,19 @@ let battleState = freshState();
 let selectedRollouts = 10000;
 let pendingActions = {0:null,1:null}; // player active slot -> action
 let uiMode = {0:null,1:null}; // 'move'|'switch' selection stage tracking, per slot
+let lastCandidatesP1 = null, lastCandidatesP2 = null; // most recent Monte Carlo candidate evaluation per active slot
+let moveHistory = []; // {turn, monName, chosen, chosenPct, best, bestPct}
+
+function lastConfirmedLabel(slot){
+  const p = pendingActions[slot];
+  if(!p) return null;
+  const mon = battleState.player.mons[battleState.player.active[slot]];
+  if(!mon) return null;
+  if(p.type==='protect') return 'Protect';
+  if(p.type==='move') return mon.moves[p.moveIdx].name;
+  if(p.type==='switch') return 'SWITCH '+battleState.player.mons[p.benchIdx].name;
+  return null;
+}
 
 function cloneState(s){ return JSON.parse(JSON.stringify(s)); }
 
@@ -417,7 +437,11 @@ function autoSendOut(state){
     side.active.forEach((idx,slot)=>{
       if(side.mons[idx].fainted){
         const bench = getAliveBenchIdx(side);
-        if(bench.length){ side.active[slot] = bench[0]; }
+        if(bench.length){
+          const newIdx = bench[0];
+          if(state.logging) log(state, `[T${String(state.turn).padStart(2,'0')}] ${side.mons[idx].name} fainted -> ${side.mons[newIdx].name} sent out from bench`);
+          side.active[slot] = newIdx;
+        }
       }
     });
   });
@@ -556,6 +580,36 @@ function greedyPolicy(side, oppSide){
   return actions;
 }
 
+function randomPolicy(side, oppSide){
+  // Opponent AI: genuinely random move/target selection (not optimized).
+  // This is the policy actually used for the opponent, both in the live battle
+  // and inside every Monte Carlo rollout -- so the simulated opponent matches
+  // the real one the engine is estimating against.
+  const actions=[];
+  side.active.forEach((idx,slot)=>{
+    const mon = side.mons[idx];
+    if(!mon || mon.fainted){ actions.push(null); return; }
+    const targets = aliveActives(oppSide);
+    if(!targets.length){ actions.push(null); return; }
+    const bench = getAliveBenchIdx(side);
+    const roll = Math.random();
+    if(roll < 0.08 && bench.length){
+      actions.push({type:'switch', benchIdx: bench[Math.floor(Math.random()*bench.length)]});
+      return;
+    }
+    if(roll < 0.20){
+      actions.push({type:'protect'});
+      return;
+    }
+    const usable = mon.moves.map((m,i)=>i).filter(i=>mon.moves[i].type!=='Status');
+    const mvIdx = usable[Math.floor(Math.random()*usable.length)];
+    const tIdx = targets[Math.floor(Math.random()*targets.length)];
+    const tSlot = oppSide.active.indexOf(tIdx);
+    actions.push({type:'move', moveIdx:mvIdx, targetSide: oppSide===battleState.player?'player':'opponent', targetSlot: tSlot<0?0:tSlot});
+  });
+  return actions;
+}
+
 function runFullBattle(initState, maxTurns){
   const state = cloneState(initState);
   state.logging = false;
@@ -563,7 +617,7 @@ function runFullBattle(initState, maxTurns){
   let turns = 0;
   while(turns < maxTurns){
     const pActs = greedyPolicy(state.player, state.opponent);
-    const oActs = greedyPolicy(state.opponent, state.player);
+    const oActs = randomPolicy(state.opponent, state.player);
     winner = simulateTurn(state, pActs, oActs);
     turns++;
     if(winner) break;
@@ -582,7 +636,7 @@ function runFullBattleForced(initState, forcedSide, forcedSlot, forcedAction, ma
   let winner = null, turns=0, first=true;
   while(turns < maxTurns){
     let pActs = greedyPolicy(state.player, state.opponent);
-    let oActs = greedyPolicy(state.opponent, state.player);
+    let oActs = randomPolicy(state.opponent, state.player);
     if(first){
       if(forcedSide==='player') pActs[forcedSlot] = forcedAction;
       else oActs[forcedSlot] = forcedAction;
@@ -859,10 +913,34 @@ document.getElementById('confirmBtn').addEventListener('click', ()=>{
     if(p.type==='switch') return {type:'switch', benchIdx:p.benchIdx};
     return null;
   });
-  const opponentActions = greedyPolicy(battleState.opponent, battleState.player);
+  const playerMonNameAtSlot = battleState.player.active.map(idx=>battleState.player.mons[idx].name);
+  const opponentActions = randomPolicy(battleState.opponent, battleState.player);
   battleState.logging = true;
   const winner = simulateTurn(battleState, playerActions, opponentActions);
   battleState.logging = false;
+
+  // Bridge prediction -> outcome: if we had a Monte Carlo evaluation for the
+  // action just played, show what the engine predicted for it beforehand,
+  // and log it into the persistent move-value history (chosen vs best alt).
+  const turnPlayed = battleState.turn - 1;
+  [0,1].forEach(slot=>{
+    const chosen = lastConfirmedLabel(slot);
+    const cands = slot===0 ? lastCandidatesP1 : lastCandidatesP2;
+    const monName = playerMonNameAtSlot[slot];
+    if(chosen && cands && cands.length){
+      const match = cands.find(c=>c.label.toUpperCase()===chosen.toUpperCase());
+      const best = cands.reduce((a,b)=> b.winRate>a.winRate?b:a, cands[0]);
+      if(match){
+        log(battleState, `[PREDICTION] pre-move estimate for ${chosen.toUpperCase()} was ${(match.winRate*100).toFixed(1)}% win probability (from last simulation)`);
+        moveHistory.push({
+          turn: turnPlayed, mon: monName, chosen, chosenPct: match.winRate,
+          best: best.label, bestPct: best.winRate, isBest: match.label===best.label
+        });
+      }
+    }
+  });
+  renderMoveValueLog();
+
   pendingActions = {0:null,1:null};
   fullRender();
   renderOpponentPanel();
@@ -887,6 +965,10 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
   document.getElementById('candBlockP1').innerHTML='';
   document.getElementById('candBlockP2').innerHTML='';
   document.getElementById('simConsole').textContent='awaiting simulation...';
+  document.getElementById('mcExplain').textContent='Run a simulation to see the derivation for every number on this panel.';
+  moveHistory = [];
+  lastCandidatesP1 = null; lastCandidatesP2 = null;
+  renderMoveValueLog();
   document.getElementById('terminalOut').textContent='> engine.start()\n> state.hash: —\n> engine.status: READY';
   clearChart();
   fullRender();
@@ -946,9 +1028,20 @@ document.getElementById('runSimBtn').addEventListener('click', async ()=>{
   // candidate action evaluation (smaller sample)
   const candRollouts = Math.min(300, Math.max(60, Math.floor(selectedRollouts/20)));
   const p1cands = await evaluateCandidates(null,0,true,candRollouts,()=>{});
-  renderCandidates('candBlockP1', battleState.player.mons[battleState.player.active[0]], p1cands);
+  lastCandidatesP1 = p1cands;
+  renderCandidates('candBlockP1', battleState.player.mons[battleState.player.active[0]], p1cands, candRollouts);
   const p2cands = await evaluateCandidates(null,1,true,candRollouts,()=>{});
-  renderCandidates('candBlockP2', battleState.player.mons[battleState.player.active[1]], p2cands);
+  lastCandidatesP2 = p2cands;
+  renderCandidates('candBlockP2', battleState.player.mons[battleState.player.active[1]], p2cands, candRollouts);
+
+  document.getElementById('mcExplain').innerHTML =
+    `<b>Overall win probability (${result.n.toLocaleString()} rollouts):</b> from the current battle state, `+
+    `${result.n.toLocaleString()} independent full battles were simulated (player = greedy policy, opponent = random policy, `+
+    `max 40 turns). ${result.wins.toLocaleString()} ended in a player win → p = ${result.wins}/${result.n} = ${ci.p.toFixed(4)}.<br><br>`+
+    `<b>Candidate action scores:</b> for each move/switch listed below, that exact action is forced on turn 1 for that Pokémon, `+
+    `then ${candRollouts} independent rollouts continue from there (ally = greedy, opponent = random) until a winner is decided. `+
+    `The bar shows wins ÷ ${candRollouts} for that specific first move — this is what "best action" means: the move whose forced `+
+    `rollouts produced the highest win rate.`;
 
   // strategy benchmark: greedy baseline vs monte-carlo-chosen best action
   const allCands = [...p1cands, ...p2cands];
@@ -978,15 +1071,29 @@ document.getElementById('runSimBtn').addEventListener('click', async ()=>{
   btn.disabled=false;
 });
 
-function renderCandidates(containerId, mon, cands){
+function renderMoveValueLog(){
+  const el = document.getElementById('moveValueLog');
+  if(!moveHistory.length){ el.textContent='no moves played yet — run a simulation, then confirm actions to build this log.'; return; }
+  const rows = moveHistory.slice(-8).reverse().map(h=>{
+    const deltaP = ((h.chosenPct - h.bestPct)*100);
+    const tag = h.isBest
+      ? `<span style="color:var(--green);">OPTIMAL — matched Monte Carlo's top pick</span>`
+      : `<span style="color:var(--opp);">SUBOPTIMAL by ${Math.abs(deltaP).toFixed(1)}pp — best was ${h.best.toUpperCase()} (${(h.bestPct*100).toFixed(1)}%)</span>`;
+    return `<div style="margin-bottom:7px;padding-bottom:7px;border-bottom:1px solid var(--border-soft);">`+
+      `T${String(h.turn).padStart(2,'0')} · ${h.mon.toUpperCase()} chose <b style="color:var(--text);">${h.chosen.toUpperCase()}</b> — `+
+      `predicted ${(h.chosenPct*100).toFixed(1)}%<br>${tag}</div>`;
+  }).join('');
+  el.innerHTML = rows;
+}
   const el = document.getElementById(containerId);
   if(!mon || mon.fainted){ el.innerHTML = `<div style="font-family:var(--mono);font-size:10px;color:var(--text-mut);">fainted — no candidates</div>`; return; }
   const max = Math.max(...cands.map(c=>c.winRate), 0.01);
   const bestIdx = cands.reduce((bi,c,i,arr)=> c.winRate>arr[bi].winRate?i:bi, 0);
-  el.innerHTML = `<div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:6px;">${mon.name.toUpperCase()}</div>` +
+  el.innerHTML = `<div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:2px;">${mon.name.toUpperCase()}</div>
+    <div style="font-family:var(--mono);font-size:9px;color:var(--text-mut);margin-bottom:6px;">each bar = wins ÷ ${rolloutsEach} rollouts, forcing that action turn 1</div>` +
     cands.map((c,i)=>`
       <div class="cand-row${i===bestIdx?' best':''}">
-        <div class="cand-head"><span>${c.label.toUpperCase()}</span><b>${(c.winRate*100).toFixed(1)}%</b></div>
+        <div class="cand-head"><span>${c.label.toUpperCase()}</span><b>${(c.winRate*100).toFixed(1)}% <span style="color:var(--text-mut);font-weight:400;">(${Math.round(c.winRate*rolloutsEach)}/${rolloutsEach})</span></b></div>
         <div class="cand-track"><div class="cand-fill" style="width:${(c.winRate/max*100)}%"></div></div>
       </div>`).join('');
 }
