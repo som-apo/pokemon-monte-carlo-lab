@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pokémon Monte Carlo Battle Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0A0D12; --panel:#10141B; --panel2:#141922; --panel3:#181F2A;
+  --border:#232A36; --border-soft:#1B212B;
+  --text:#DCE1EA; --text-dim:#8A93A6; --text-mut:#4E586B;
+  --player:#45E0C4; --player-dim:rgba(69,224,196,0.10); --player-border:rgba(69,224,196,0.35);
+  --opp:#FF6B6B; --opp-dim:rgba(255,107,107,0.10); --opp-border:rgba(255,107,107,0.35);
+  --gold:#E8B34A; --gold-dim:rgba(232,179,74,0.12);
+  --green:#3FCB6E;
+  --mono:'JetBrains Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
+  --sans:'Inter',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;line-height:1.5;}
+.mono{font-family:var(--mono);}
+::selection{background:var(--player-dim);}
+
+/* ---------- HEADER ---------- */
+header{display:flex;justify-content:space-between;align-items:flex-start;padding:16px 22px;flex-wrap:wrap;gap:12px;}
+.h-left h1{font-family:var(--mono);font-size:17px;font-weight:700;letter-spacing:0.02em;color:var(--text);}
+.h-left .sub{font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-top:2px;letter-spacing:0.02em;}
+.h-right{display:flex;gap:18px;flex-wrap:wrap;align-items:center;}
+.h-stat{font-family:var(--mono);font-size:11px;color:var(--text-dim);text-align:right;}
+.h-stat b{color:var(--text);font-weight:600;}
+.status-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:5px;box-shadow:0 0 6px var(--green);}
+.divider{height:1px;background:var(--border);margin:0 22px 16px;}
+
+/* ---------- LAYOUT ---------- */
+.layout{display:grid;grid-template-columns:280px 1fr 360px;gap:14px;padding:0 22px 40px;align-items:start;}
+@media (max-width:1200px){.layout{grid-template-columns:1fr;}}
+
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:14px;}
+.panel-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.08em;color:var(--text-dim);margin-bottom:12px;text-transform:uppercase;}
+.panel-title.player{color:var(--player);}
+.panel-title.opp{color:var(--opp);}
+
+/* ---------- TEAM CARDS ---------- */
+.mon-card{border:1px solid var(--border-soft);border-radius:5px;padding:9px 10px;margin-bottom:8px;background:var(--panel2);}
+.mon-card.active{border-color:var(--player-border);background:var(--player-dim);}
+.mon-card.active.opp-active{border-color:var(--opp-border);background:var(--opp-dim);}
+.mon-card.fainted{opacity:0.4;}
+.mon-row{display:flex;justify-content:space-between;align-items:baseline;}
+.mon-name{font-weight:600;font-size:12.5px;}
+.mon-type{font-family:var(--mono);font-size:9.5px;color:var(--text-dim);letter-spacing:0.05em;}
+.mon-hp-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--text-dim);margin-top:6px;}
+.hp-bar-track{height:4px;background:var(--border-soft);border-radius:2px;margin-top:4px;overflow:hidden;}
+.hp-bar-fill{height:100%;background:var(--player);transition:width 0.4s ease;}
+.hp-bar-fill.opp{background:var(--opp);}
+.hp-bar-fill.low{background:var(--gold);}
+.hp-bar-fill.crit{background:var(--opp);}
+.mon-status{font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--text-mut);margin-top:5px;text-transform:uppercase;}
+.mon-status.is-active{color:var(--player);}
+.mon-status.is-active.opp{color:var(--opp);}
+
+/* ---------- CENTER ARENA ---------- */
+.arena-title{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--text-dim);letter-spacing:0.08em;margin-bottom:14px;}
+.arena-title .live{color:var(--green);}
+.vs-grid{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin-bottom:16px;}
+.vs-side{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.vs-node{border:1px solid var(--border-soft);border-radius:5px;padding:10px;text-align:center;background:var(--panel2);}
+.vs-node.player{border-color:var(--player-border);}
+.vs-node.opp{border-color:var(--opp-border);}
+.vs-node .vname{font-weight:600;font-size:12.5px;}
+.vs-node .vhp{font-family:var(--mono);font-size:10.5px;color:var(--text-dim);margin-top:4px;}
+.vs-mid{font-family:var(--mono);font-size:11px;color:var(--text-mut);text-align:center;font-weight:700;}
+
+.turn-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.turn-label{font-family:var(--mono);font-size:11px;color:var(--text-dim);letter-spacing:0.06em;}
+.turn-num{font-family:var(--mono);font-size:14px;color:var(--gold);font-weight:700;}
+
+.battle-log{background:#0C0F14;border:1px solid var(--border-soft);border-radius:5px;padding:10px 12px;height:150px;overflow-y:auto;font-family:var(--mono);font-size:11px;color:var(--text-dim);}
+.battle-log div{margin-bottom:2px;white-space:pre-wrap;}
+.log-eff{color:var(--gold);}
+.log-immune{color:var(--text-mut);}
+.log-faint{color:var(--opp);}
+
+.state-strip{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0;}
+.state-col-title{font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:0.08em;margin-bottom:6px;}
+.state-col-title.player{color:var(--player);}
+.state-col-title.opp{color:var(--opp);}
+.state-line{font-family:var(--mono);font-size:11px;display:flex;gap:6px;align-items:center;margin-bottom:3px;}
+.dot-fill{color:var(--player);}
+.dot-fill.opp{color:var(--opp);}
+.dot-empty{color:var(--text-mut);}
+
+/* ---------- ACTION PANEL ---------- */
+.action-block{border:1px solid var(--border-soft);border-radius:5px;padding:10px;margin-bottom:10px;background:var(--panel2);}
+.action-mon-name{font-weight:700;font-size:12.5px;margin-bottom:8px;color:var(--player);}
+.move-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.move-btn{background:var(--panel3);border:1px solid var(--border-soft);border-radius:4px;padding:7px 8px;cursor:pointer;text-align:left;transition:all .15s;}
+.move-btn:hover{border-color:var(--player-border);}
+.move-btn.selected{border-color:var(--player);background:var(--player-dim);}
+.move-btn .mname{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:0.02em;}
+.move-btn .minfo{font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:2px;}
+.target-row,.switch-row{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;}
+.chip{font-family:var(--mono);font-size:10px;border:1px solid var(--border-soft);border-radius:3px;padding:4px 8px;cursor:pointer;color:var(--text-dim);background:var(--panel3);}
+.chip:hover{border-color:var(--player-border);}
+.chip.selected{border-color:var(--player);color:var(--player);background:var(--player-dim);}
+.chip.disabled{opacity:0.3;pointer-events:none;}
+.mini-label{font-family:var(--mono);font-size:9px;color:var(--text-mut);letter-spacing:0.08em;margin-top:8px;margin-bottom:3px;text-transform:uppercase;}
+
+.btn-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+.btn{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.04em;border:1px solid var(--border);border-radius:4px;padding:9px 16px;cursor:pointer;background:var(--panel3);color:var(--text-dim);transition:all .15s;}
+.btn:hover:not(:disabled){border-color:var(--text-dim);color:var(--text);}
+.btn:disabled{opacity:0.35;cursor:not-allowed;}
+.btn-primary{background:var(--player-dim);border-color:var(--player-border);color:var(--player);}
+.btn-primary:hover:not(:disabled){border-color:var(--player);}
+.btn-reset{color:var(--opp);border-color:var(--opp-border);}
+
+/* ---------- RIGHT PANEL ---------- */
+.wp-big{font-family:var(--mono);font-size:38px;font-weight:700;color:var(--player);line-height:1;margin:4px 0 10px;}
+.wp-sub-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;margin-bottom:3px;}
+.wp-sub-row b{color:var(--text);}
+.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px;}
+.metric-box{background:var(--panel2);border:1px solid var(--border-soft);border-radius:4px;padding:8px 10px;}
+.metric-box .ml{font-family:var(--mono);font-size:9px;color:var(--text-mut);letter-spacing:0.06em;text-transform:uppercase;}
+.metric-box .mv{font-family:var(--mono);font-size:14px;font-weight:700;margin-top:3px;}
+
+.rollout-row{display:flex;gap:6px;margin:12px 0 8px;}
+.rbtn{flex:1;font-family:var(--mono);font-size:11px;padding:7px 0;text-align:center;border:1px solid var(--border-soft);border-radius:4px;cursor:pointer;color:var(--text-dim);background:var(--panel2);}
+.rbtn.selected{border-color:var(--gold);color:var(--gold);background:var(--gold-dim);}
+
+.sim-console{background:#0C0F14;border:1px solid var(--border-soft);border-radius:5px;padding:9px 11px;font-family:var(--mono);font-size:10.5px;color:var(--text-dim);min-height:70px;margin-top:10px;white-space:pre-wrap;}
+.sim-console .ok{color:var(--green);}
+
+.cand-block{margin-top:6px;}
+.cand-row{margin-bottom:7px;}
+.cand-head{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;margin-bottom:3px;}
+.cand-head b{color:var(--text);}
+.cand-track{height:6px;background:var(--border-soft);border-radius:3px;overflow:hidden;}
+.cand-fill{height:100%;background:var(--text-mut);}
+.cand-row.best .cand-fill{background:var(--gold);}
+.cand-row.best .cand-head b{color:var(--gold);}
+
+.bench-title{font-family:var(--mono);font-size:10px;color:var(--text-mut);margin:12px 0 6px;letter-spacing:0.06em;}
+
+.compare-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;margin-top:10px;}
+.compare-bar-wrap{margin-top:4px;height:8px;background:var(--border-soft);border-radius:4px;overflow:hidden;}
+.compare-bar{height:100%;}
+.compare-bar.mc{background:var(--player);}
+.compare-bar.greedy{background:var(--text-mut);}
+.delta-line{font-family:var(--mono);font-size:11px;color:var(--gold);margin-top:8px;text-align:right;font-weight:700;}
+
+canvas#convergenceChart{width:100%;height:130px;margin-top:8px;}
+.conv-note{font-family:var(--mono);font-size:9.5px;color:var(--text-mut);margin-top:4px;}
+
+.stat-line{font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:4px;}
+.stat-line b{color:var(--text);}
+.stat-note{font-family:var(--mono);font-size:9.5px;color:var(--text-mut);margin-top:6px;}
+
+.badge{display:inline-block;font-family:var(--mono);font-size:10px;border:1px solid var(--border-soft);border-radius:4px;padding:6px 10px;cursor:pointer;color:var(--text-dim);margin-top:4px;}
+.badge:hover{border-color:var(--gold-dim);color:var(--gold);}
+.lookahead-flow{display:none;font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:8px;line-height:1.9;border-left:2px solid var(--border-soft);padding-left:10px;}
+.lookahead-flow.show{display:block;}
+
+footer{text-align:center;padding:24px 0 30px;font-family:var(--mono);font-size:10px;color:var(--text-mut);line-height:1.8;}
+
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="h-left">
+    <h1>POKÉMON MONTE CARLO LAB</h1>
+    <div class="sub">probabilistic battle strategy engine</div>
+  </div>
+  <div class="h-right">
+    <div class="h-stat"><span class="status-dot"></span>ENGINE: <b>ONLINE</b></div>
+    <div class="h-stat">ROLLOUTS: <b id="hdrRollouts">10,000</b></div>
+    <div class="h-stat">TURN: <b id="hdrTurn">01</b></div>
+    <div class="h-stat">STATUS: <b id="hdrStatus">READY</b></div>
+  </div>
+</header>
+<div class="divider"></div>
+
+<div class="layout">
+
+  <!-- LEFT: PLAYER TEAM -->
+  <div class="panel">
+    <div class="panel-title player">PLAYER // TEAM</div>
+    <div id="playerTeamList"></div>
+  </div>
+
+  <!-- CENTER: ARENA -->
+  <div style="display:flex;flex-direction:column;gap:14px;">
+    <div class="panel">
+      <div class="arena-title">BATTLE STATE // <span class="live">LIVE</span></div>
+      <div class="vs-grid">
+        <div class="vs-side" id="playerActiveNodes"></div>
+        <div class="vs-mid">VS</div>
+        <div class="vs-side" id="opponentActiveNodes"></div>
+      </div>
+      <div class="turn-row">
+        <span class="turn-label">TURN</span>
+        <span class="turn-num" id="turnNumBig">01</span>
+      </div>
+      <div class="battle-log" id="battleLog"></div>
+
+      <div class="state-strip">
+        <div>
+          <div class="state-col-title player">PLAYER</div>
+          <div id="playerStateStrip"></div>
+        </div>
+        <div>
+          <div class="state-col-title opp">OPPONENT</div>
+          <div id="opponentStateStrip"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">ACTION SELECTION</div>
+      <div id="actionBlocks"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="confirmBtn" disabled>[ CONFIRM ACTIONS ]</button>
+        <button class="btn btn-reset" id="resetBtn">RESET</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: MONTE CARLO ENGINE -->
+  <div class="panel">
+    <div class="panel-title">MONTE CARLO // ENGINE</div>
+
+    <div class="mini-label" style="margin-top:0;">WIN PROBABILITY</div>
+    <div class="wp-big" id="wpBig">—.—%</div>
+    <div class="wp-sub-row"><span>PLAYER WIN</span><b id="wpPlayer">—</b></div>
+    <div class="wp-sub-row"><span>OPPONENT WIN</span><b id="wpOpp">—</b></div>
+
+    <div class="metric-grid">
+      <div class="metric-box"><div class="ml">Rollouts</div><div class="mv" id="mRollouts">—</div></div>
+      <div class="metric-box"><div class="ml">Wins</div><div class="mv" id="mWins">—</div></div>
+      <div class="metric-box"><div class="ml">Avg Turns</div><div class="mv" id="mAvgTurns">—</div></div>
+      <div class="metric-box"><div class="ml">95% CI</div><div class="mv" id="mCI" style="font-size:11px;">—</div></div>
+    </div>
+
+    <div class="mini-label">ROLLOUT COUNT</div>
+    <div class="rollout-row">
+      <div class="rbtn" data-n="1000">1K</div>
+      <div class="rbtn" data-n="5000">5K</div>
+      <div class="rbtn selected" data-n="10000">10K</div>
+      <div class="rbtn" data-n="50000">50K</div>
+    </div>
+    <button class="btn btn-primary" id="runSimBtn" style="width:100%;">▶ RUN SIMULATION</button>
+    <div class="sim-console" id="simConsole">awaiting simulation...</div>
+
+    <div class="mini-label">CANDIDATE ACTIONS</div>
+    <div class="cand-block" id="candBlockP1"></div>
+    <div class="cand-block" id="candBlockP2" style="margin-top:10px;"></div>
+
+    <div class="mini-label">STRATEGY BENCHMARK</div>
+    <div class="compare-row"><span>MONTE CARLO</span><b id="cmpMC">—</b></div>
+    <div class="compare-bar-wrap"><div class="compare-bar mc" id="cmpMCBar" style="width:0%;"></div></div>
+    <div class="compare-row" style="margin-top:6px;"><span>GREEDY DAMAGE</span><b id="cmpGreedy">—</b></div>
+    <div class="compare-bar-wrap"><div class="compare-bar greedy" id="cmpGreedyBar" style="width:0%;"></div></div>
+    <div class="delta-line" id="cmpDelta">DELTA — pp</div>
+
+    <div class="mini-label">ESTIMATE CONVERGENCE</div>
+    <canvas id="convergenceChart" width="320" height="130"></canvas>
+    <div class="conv-note">variance ↓ as N ↑</div>
+
+    <div class="mini-label">STATISTICS</div>
+    <div class="stat-line">p = wins / N = <b id="statP">—</b></div>
+    <div class="stat-line">SE = √(p(1−p)/N) = <b id="statSE">—</b></div>
+    <div class="stat-line">95% CI = p ± 1.96·SE = <b id="statCI">—</b></div>
+    <div class="stat-note">Bernoulli outcome model — each rollout = Win / Loss</div>
+
+    <div class="badge" id="lookaheadBadge">DECISION MODEL: MONTE CARLO + LOOKAHEAD</div>
+    <div class="lookahead-flow" id="lookaheadFlow">candidate action
+      ↓
+opponent response
+      ↓
+future battle states
+      ↓
+Monte Carlo rollouts
+      ↓
+expected win probability</div>
+
+    <div class="mini-label">ENGINE OUTPUT</div>
+    <div class="sim-console mono" id="terminalOut">&gt; engine.start()
+&gt; state.hash: —
+&gt; engine.status: READY</div>
+  </div>
+</div>
+
+<footer>
+MONTE CARLO STRATEGY ENGINE<br>
+4v4 DOUBLES // STOCHASTIC SIMULATION<br>
+BERNOULLI CI // LOOKAHEAD // STRATEGY BENCHMARK
+</footer>
+
+<script>
+/* ============================================================
+   DATA
+============================================================ */
+const TYPE_CHART = {
+  Electric:{Water:2,Ground:0,Electric:0.5,Grass:0.5,Flying:2},
+  Fire:{Grass:2,Water:0.5,Fire:0.5,Rock:0.5,Dragon:0.5,Ice:2},
+  Water:{Fire:2,Ground:2,Rock:2,Water:0.5,Grass:0.5,Dragon:0.5},
+  Ground:{Electric:2,Rock:1,Flying:0,Grass:0.5},
+  Rock:{Fire:2,Flying:2,Ice:2,Fighting:0.5,Ground:0.5},
+  Dragon:{Dragon:2,Steel:0.5,Fairy:0},
+  Ice:{Dragon:2,Flying:2,Grass:2,Ground:2,Fire:0.5,Water:0.5,Ice:0.5},
+  Dark:{Psychic:2,Ghost:2,Fighting:0.5,Dark:0.5,Fairy:0.5},
+  Psychic:{Fighting:2,Psychic:0.5,Dark:0},
+  Fairy:{Dragon:2,Fighting:2,Dark:2,Fire:0.5},
+  Ghost:{Psychic:2,Ghost:2,Normal:0},
+  Fighting:{Rock:2,Dark:2,Ice:2,Normal:2,Flying:0.5,Psychic:0.5,Fairy:0.5},
+  Flying:{Fighting:2,Grass:2,Rock:0.5,Electric:0.5},
+  Normal:{Rock:0.5,Ghost:0}
+};
+function getTypeMultiplier(moveType, targetType){
+  if(moveType==='Status') return 1;
+  const row = TYPE_CHART[moveType];
+  if(!row) return 1;
+  return (row[targetType]!==undefined) ? row[targetType] : 1;
+}
+
+const PLAYER_TEAM_BASE = [
+  {name:'Pikachu',type:'Electric',hp:100,atk:55,def:40,spd:90,moves:[
+    {name:'Thunderbolt',type:'Electric',power:90,acc:95},
+    {name:'Quick Attack',type:'Normal',power:40,acc:100},
+    {name:'Electro Ball',type:'Electric',power:70,acc:100},
+    {name:'Protect',type:'Status',power:0,acc:100}]},
+  {name:'Charizard',type:'Fire',hp:130,atk:84,def:78,spd:100,moves:[
+    {name:'Flamethrower',type:'Fire',power:90,acc:100},
+    {name:'Air Slash',type:'Flying',power:75,acc:95},
+    {name:'Dragon Claw',type:'Dragon',power:80,acc:100},
+    {name:'Protect',type:'Status',power:0,acc:100}]},
+  {name:'Garchomp',type:'Ground',hp:140,atk:100,def:90,spd:92,moves:[
+    {name:'Earthquake',type:'Ground',power:100,acc:95},
+    {name:'Dragon Claw',type:'Dragon',power:80,acc:100},
+    {name:'Rock Slide',type:'Rock',power:75,acc:90},
+    {name:'Protect',type:'Status',power:0,acc:100}]},
+  {name:'Lucario',type:'Fighting',hp:110,atk:95,def:70,spd:90,moves:[
+    {name:'Close Combat',type:'Fighting',power:120,acc:100},
+    {name:'Aura Sphere',type:'Fighting',power:80,acc:100},
+    {name:'Extreme Speed',type:'Normal',power:80,acc:100},
+    {name:'Protect',type:'Status',power:0,acc:100}]}
+];
+const OPPONENT_TEAM_BASE = [
+  {name:'Greninja',type:'Water',hp:100,atk:75,def:60,spd:122,moves:[
+    {name:'Hydro Pump',type:'Water',power:110,acc:80},
+    {name:'Night Slash',type:'Dark',power:70,acc:100},
+    {name:'Ice Beam',type:'Ice',power:90,acc:100},
+    {name:'Protect',type:'Status',power:0,acc:100}]},
+  {name:'Tyranitar',type:'Rock',hp:150,atk:105,def:90,spd:61,moves:[
+    {name:'Rock Slide',type:'Rock',power:75,acc:90},
+    {name:'Crunch',type:'Dark',power:80,acc:100},
+    {name:'Earthquake',type:'Ground',power:100,acc:95},
+    {name:'Protect',type:'Status',power:0,acc:100}]},
+  {name:'Gardevoir',type:'Psychic',hp:115,atk:65,def:65,spd:80,moves:[
+    {name:'Psychic',type:'Psychic',power:90,acc:100},
+    {name:'Moonblast',type:'Fairy',power:95,acc:100},
+    {name:'Shadow Ball',type:'Ghost',power:80,acc:100},
+    {name:'Protect',type:'Status',power:0,acc:100}]},
+  {name:'Dragonite',type:'Dragon',hp:140,atk:100,def:95,spd:80,moves:[
+    {name:'Dragon Claw',type:'Dragon',power:80,acc:100},
+    {name:'Hurricane',type:'Flying',power:110,acc:70},
+    {name:'Fire Punch',type:'Fire',power:75,acc:100},
+    {name:'Protect',type:'Status',power:0,acc:100}]}
+];
+const SCALE = 0.5;
+
+/* ============================================================
+   STATE
+============================================================ */
+function freshState(){
+  return {
+    player:{ mons: PLAYER_TEAM_BASE.map(m=>({...m, maxHp:m.hp, fainted:false, protecting:false})), active:[0,1] },
+    opponent:{ mons: OPPONENT_TEAM_BASE.map(m=>({...m, maxHp:m.hp, fainted:false, protecting:false})), active:[0,1] },
+    turn:1, log:[]
+  };
+}
+let battleState = freshState();
+let selectedRollouts = 10000;
+let pendingActions = {0:null,1:null}; // player active slot -> action
+let uiMode = {0:null,1:null}; // 'move'|'switch' selection stage tracking, per slot
+
+function cloneState(s){ return JSON.parse(JSON.stringify(s)); }
+
+/* ============================================================
+   CORE BATTLE ENGINE
+============================================================ */
+function calculateDamage(attacker, move, defender){
+  if(move.type==='Status') return {damage:0, effectiveness:1, crit:false};
+  const mult = getTypeMultiplier(move.type, defender.type);
+  if(mult===0) return {damage:0, effectiveness:0, crit:false};
+  const isCrit = Math.random() < 0.0625;
+  const rand = 0.85 + Math.random()*0.15;
+  let dmg = (move.power * attacker.atk / defender.def) * mult * rand * (isCrit?1.5:1) * SCALE;
+  dmg = Math.max(1, Math.round(dmg));
+  return {damage:dmg, effectiveness:mult, crit:isCrit};
+}
+function rollAccuracy(move){ return Math.random()*100 < move.acc; }
+
+function getAliveBenchIdx(side){
+  return side.mons.map((m,i)=>i).filter(i=>!m_fainted(side,i) && !side.active.includes(i));
+}
+function m_fainted(side,i){ return side.mons[i].fainted; }
+function aliveActives(side){ return side.active.filter(i=>!side.mons[i].fainted); }
+function sideAlive(side){ return side.mons.some(m=>!m.fainted); }
+
+function autoSendOut(state){
+  ['player','opponent'].forEach(k=>{
+    const side = state[k];
+    side.active.forEach((idx,slot)=>{
+      if(side.mons[idx].fainted){
+        const bench = getAliveBenchIdx(side);
+        if(bench.length){ side.active[slot] = bench[0]; }
+      }
+    });
+  });
+}
+
+function log(state, text){ state.log.push(text); }
+
+/**
+ * playerActions/opponentActions: array of 2, each:
+ * {type:'move', moveIdx, targetSide, targetSlot} | {type:'protect'} | {type:'switch', benchIdx}
+ */
+function simulateTurn(state, playerActions, opponentActions){
+  // 1. resolve switches first
+  ['player','opponent'].forEach(k=>{
+    const acts = k==='player'?playerActions:opponentActions;
+    const side = state[k];
+    acts.forEach((a,slot)=>{
+      if(a && a.type==='switch'){
+        const outIdx = side.active[slot];
+        side.active[slot] = a.benchIdx;
+        if(state.logging) log(state, `[T${String(state.turn).padStart(2,'0')}] ${side.mons[outIdx].name} switched out -> ${side.mons[a.benchIdx].name}`);
+        a.__consumed = true;
+      }
+    });
+  });
+
+  // reset protect flags
+  state.player.mons.forEach(m=>m.protecting=false);
+  state.opponent.mons.forEach(m=>m.protecting=false);
+
+  // 2. build queue of move/protect actions with speed
+  const queue = [];
+  playerActions.forEach((a,slot)=>{
+    if(a && !a.__consumed && state.player.active[slot]!==undefined){
+      const idx = state.player.active[slot];
+      if(!state.player.mons[idx].fainted) queue.push({side:'player',slot,idx,action:a,spd:state.player.mons[idx].spd + Math.random()*0.01});
+    }
+  });
+  opponentActions.forEach((a,slot)=>{
+    if(a && !a.__consumed && state.opponent.active[slot]!==undefined){
+      const idx = state.opponent.active[slot];
+      if(!state.opponent.mons[idx].fainted) queue.push({side:'opponent',slot,idx,action:a,spd:state.opponent.mons[idx].spd + Math.random()*0.01});
+    }
+  });
+  queue.sort((a,b)=>b.spd-a.spd);
+
+  for(const q of queue){
+    const side = state[q.side];
+    const mon = side.mons[q.idx];
+    if(mon.fainted) continue;
+    if(q.action.type==='protect'){
+      mon.protecting = true;
+      if(state.logging) log(state, `[T${String(state.turn).padStart(2,'0')}] ${mon.name} used Protect`);
+      continue;
+    }
+    if(q.action.type==='move'){
+      const move = mon.moves[q.action.moveIdx];
+      const oppKey = q.side==='player'?'opponent':'player';
+      let targetSide = state[q.action.targetSide || oppKey];
+      let targetSlot = q.action.targetSlot!==undefined ? q.action.targetSlot : 0;
+      let targetIdx = targetSide.active[targetSlot];
+      if(targetIdx===undefined || targetSide.mons[targetIdx].fainted){
+        const alive = aliveActives(targetSide);
+        if(!alive.length) continue;
+        targetIdx = alive[0];
+      }
+      const target = targetSide.mons[targetIdx];
+      if(move.type==='Status'){ continue; }
+      if(!rollAccuracy(move)){
+        if(state.logging) log(state, `[T${String(state.turn).padStart(2,'0')}] ${mon.name} -> ${move.name} -> MISS`);
+        continue;
+      }
+      if(target.protecting){
+        if(state.logging) log(state, `[T${String(state.turn).padStart(2,'0')}] ${mon.name} -> ${move.name} -> ${target.name} PROTECTED`);
+        continue;
+      }
+      const res = calculateDamage(mon, move, target);
+      target.hp = Math.max(0, target.hp - res.damage);
+      if(target.hp<=0) target.fainted = true;
+      if(state.logging){
+        let effTxt = '';
+        if(res.effectiveness===0) effTxt = ' | IMMUNE // 0.0x';
+        else if(res.effectiveness>=2) effTxt = ' | SUPER EFFECTIVE // 2.0x';
+        else if(res.effectiveness<1) effTxt = ' | NOT VERY EFFECTIVE';
+        log(state, `[T${String(state.turn).padStart(2,'0')}] ${mon.name} -> ${move.name} -> ${target.name}`);
+        log(state, `[T${String(state.turn).padStart(2,'0')}] damage: ${res.damage}${effTxt}${res.crit?' | CRIT':''}`);
+        if(target.fainted) log(state, `[T${String(state.turn).padStart(2,'0')}] ${target.name} FAINTED`);
+      }
+    }
+  }
+
+  autoSendOut(state);
+  state.turn++;
+
+  const pAlive = sideAlive(state.player), oAlive = sideAlive(state.opponent);
+  if(!pAlive) return 'opponent';
+  if(!oAlive) return 'player';
+  return null;
+}
+
+/* ---------- AI POLICIES ---------- */
+function bestMoveAgainst(mon, target){
+  let best=0, bestScore=-1;
+  mon.moves.forEach((mv,i)=>{
+    if(mv.type==='Status') return;
+    const mult = getTypeMultiplier(mv.type, target.type);
+    const score = mv.power * mult * (mv.acc/100);
+    if(score>bestScore){ bestScore=score; best=i; }
+  });
+  return best;
+}
+function greedyPolicy(side, oppSide){
+  const actions=[];
+  side.active.forEach((idx,slot)=>{
+    const mon = side.mons[idx];
+    if(!mon || mon.fainted){ actions.push(null); return; }
+    const targets = aliveActives(oppSide);
+    if(!targets.length){ actions.push(null); return; }
+    // occasionally protect if low hp
+    if(mon.hp/mon.maxHp < 0.25 && Math.random()<0.3){
+      actions.push({type:'protect'});
+      return;
+    }
+    // pick best target+move combo
+    let bestScore=-1, bestMove=0, bestTargetSlot=0;
+    targets.forEach((tIdx,ti)=>{
+      const target = oppSide.mons[tIdx];
+      const mvIdx = bestMoveAgainst(mon, target);
+      const mv = mon.moves[mvIdx];
+      const mult = getTypeMultiplier(mv.type, target.type);
+      const score = mv.power*mult*(mv.acc/100);
+      if(score>bestScore){ bestScore=score; bestMove=mvIdx; bestTargetSlot = oppSide.active.indexOf(tIdx); }
+    });
+    actions.push({type:'move', moveIdx:bestMove, targetSide: oppSide===battleState.player?'player':'opponent', targetSlot: bestTargetSlot<0?0:bestTargetSlot});
+  });
+  return actions;
+}
+
+function runFullBattle(initState, maxTurns){
+  const state = cloneState(initState);
+  state.logging = false;
+  let winner = null;
+  let turns = 0;
+  while(turns < maxTurns){
+    const pActs = greedyPolicy(state.player, state.opponent);
+    const oActs = greedyPolicy(state.opponent, state.player);
+    winner = simulateTurn(state, pActs, oActs);
+    turns++;
+    if(winner) break;
+  }
+  if(!winner){
+    const pHP = state.player.mons.reduce((s,m)=>s+m.hp,0);
+    const oHP = state.opponent.mons.reduce((s,m)=>s+m.hp,0);
+    winner = pHP>=oHP ? 'player' : 'opponent';
+  }
+  return {winner, turns};
+}
+
+function runFullBattleForced(initState, forcedSide, forcedSlot, forcedAction, maxTurns){
+  const state = cloneState(initState);
+  state.logging = false;
+  let winner = null, turns=0, first=true;
+  while(turns < maxTurns){
+    let pActs = greedyPolicy(state.player, state.opponent);
+    let oActs = greedyPolicy(state.opponent, state.player);
+    if(first){
+      if(forcedSide==='player') pActs[forcedSlot] = forcedAction;
+      else oActs[forcedSlot] = forcedAction;
+      first=false;
+    }
+    winner = simulateTurn(state, pActs, oActs);
+    turns++;
+    if(winner) break;
+  }
+  if(!winner){
+    const pHP = state.player.mons.reduce((s,m)=>s+m.hp,0);
+    const oHP = state.opponent.mons.reduce((s,m)=>s+m.hp,0);
+    winner = pHP>=oHP ? 'player' : 'opponent';
+  }
+  return {winner, turns};
+}
+
+function calculateConfidenceInterval(wins, n){
+  const p = n? wins/n : 0;
+  const se = n? Math.sqrt(p*(1-p)/n) : 0;
+  let low = p-1.96*se, high=p+1.96*se;
+  low = Math.max(0,low); high = Math.min(1,high);
+  return {p, se, low, high};
+}
+
+/* ============================================================
+   MONTE CARLO RUN (chunked async)
+============================================================ */
+async function runMonteCarlo(n, onProgress){
+  let wins=0, totalTurns=0;
+  const checkpoints=[];
+  const checkAt = [Math.floor(n*0.01),Math.floor(n*0.05),Math.floor(n*0.1),Math.floor(n*0.25),Math.floor(n*0.5),Math.floor(n*0.75),n].map(x=>Math.max(1,x));
+  const batch = 150;
+  for(let i=1;i<=n;i++){
+    const r = runFullBattle(battleState, 40);
+    if(r.winner==='player') wins++;
+    totalTurns += r.turns;
+    if(checkAt.includes(i)){
+      checkpoints.push({n:i, p: wins/i});
+    }
+    if(i % batch === 0){
+      onProgress(i, n, wins);
+      await new Promise(res=>setTimeout(res,0));
+    }
+  }
+  onProgress(n,n,wins);
+  return {wins, n, avgTurns: totalTurns/n, checkpoints};
+}
+
+async function evaluateCandidates(side, slot, isPlayer, rolloutsEach, onEach){
+  const s = isPlayer? battleState.player : battleState.opponent;
+  const idx = s.active[slot];
+  const mon = s.mons[idx];
+  if(!mon || mon.fainted) return [];
+  const oppSide = isPlayer? battleState.opponent : battleState.player;
+  const targets = aliveActives(oppSide);
+  const results = [];
+  for(let mv=0; mv<mon.moves.length; mv++){
+    const move = mon.moves[mv];
+    let action;
+    if(move.name==='Protect'){ action={type:'protect'}; }
+    else{
+      const tSlot = targets.length? oppSide.active.indexOf(targets[0]) : 0;
+      action = {type:'move', moveIdx:mv, targetSide:isPlayer?'opponent':'player', targetSlot: tSlot<0?0:tSlot};
+    }
+    let wins=0;
+    for(let i=0;i<rolloutsEach;i++){
+      const r = runFullBattleForced(battleState, isPlayer?'player':'opponent', slot, action, 40);
+      if(r.winner===(isPlayer?'player':'opponent')) wins++;
+    }
+    results.push({label: move.name, winRate: wins/rolloutsEach});
+    await new Promise(res=>setTimeout(res,0));
+  }
+  // switch options
+  const bench = getAliveBenchIdx(s);
+  for(const bIdx of bench){
+    const action = {type:'switch', benchIdx:bIdx};
+    let wins=0;
+    for(let i=0;i<rolloutsEach;i++){
+      const r = runFullBattleForced(battleState, isPlayer?'player':'opponent', slot, action, 40);
+      if(r.winner===(isPlayer?'player':'opponent')) wins++;
+    }
+    results.push({label:'SWITCH '+s.mons[bIdx].name, winRate: wins/rolloutsEach});
+    await new Promise(res=>setTimeout(res,0));
+  }
+  return results;
+}
+
+/* ============================================================
+   UI RENDERING
+============================================================ */
+function hpClass(mon){
+  const pct = mon.hp/mon.maxHp;
+  if(pct<0.25) return 'crit';
+  if(pct<0.5) return 'low';
+  return '';
+}
+function renderTeamList(container, side, isPlayer){
+  container.innerHTML = '';
+  side.mons.forEach((mon,idx)=>{
+    const isActive = side.active.includes(idx);
+    const div = document.createElement('div');
+    div.className = 'mon-card' + (isActive?' active':'') + (isActive&&!isPlayer?' opp-active':'') + (mon.fainted?' fainted':'');
+    div.innerHTML = `
+      <div class="mon-row"><span class="mon-name">${mon.name.toUpperCase()}</span><span class="mon-type">${mon.type.toUpperCase()}</span></div>
+      <div class="mon-hp-row"><span>HP</span><span>${mon.hp} / ${mon.maxHp}</span></div>
+      <div class="hp-bar-track"><div class="hp-bar-fill ${isPlayer?'':'opp'} ${hpClass(mon)}" style="width:${Math.max(0,mon.hp/mon.maxHp*100)}%"></div></div>
+      <div class="mon-status ${isActive?'is-active':''} ${!isPlayer?'opp':''}">${mon.fainted?'FAINTED':(isActive?'ACTIVE':'BENCH')}</div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function renderArenaNodes(container, side, isPlayer){
+  container.innerHTML='';
+  side.active.forEach(idx=>{
+    const mon = side.mons[idx];
+    const div = document.createElement('div');
+    div.className = 'vs-node ' + (isPlayer?'player':'opp');
+    div.innerHTML = `<div class="vname">${mon.name}</div><div class="vhp">${mon.fainted?'FAINTED':mon.hp+' HP'}</div>`;
+    container.appendChild(div);
+  });
+}
+
+function renderStateStrip(container, side, isPlayer){
+  container.innerHTML='';
+  side.mons.forEach((mon,idx)=>{
+    const isActive = side.active.includes(idx);
+    const d = document.createElement('div');
+    d.className='state-line';
+    d.innerHTML = mon.fainted
+      ? `<span class="dot-empty">×</span><span style="text-decoration:line-through;color:var(--text-mut)">${mon.name}</span>`
+      : isActive
+        ? `<span class="${isPlayer?'dot-fill':'dot-fill opp'}">●</span><span>${mon.name} ${mon.hp}</span>`
+        : `<span class="dot-empty">○</span><span style="color:var(--text-mut)">${mon.name}</span>`;
+    container.appendChild(d);
+  });
+}
+
+function renderLog(){
+  const el = document.getElementById('battleLog');
+  el.innerHTML = battleState.log.slice(-40).map(l=>`<div>${l}</div>`).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function renderActionBlocks(){
+  const container = document.getElementById('actionBlocks');
+  container.innerHTML='';
+  battleState.player.active.forEach((idx,slot)=>{
+    const mon = battleState.player.mons[idx];
+    const block = document.createElement('div');
+    block.className='action-block';
+    if(mon.fainted){
+      block.innerHTML = `<div class="action-mon-name" style="color:var(--text-mut)">${mon.name.toUpperCase()} — FAINTED</div>`;
+      container.appendChild(block);
+      return;
+    }
+    const pending = pendingActions[slot];
+    let movesHtml = mon.moves.map((mv,mi)=>{
+      const sel = pending && pending.type==='move' && pending.moveIdx===mi ? ' selected':'';
+      const info = mv.type==='Status' ? '' : `${mv.type} | P${mv.power} | ACC${mv.acc}`;
+      return `<div class="move-btn${sel}" data-slot="${slot}" data-mvidx="${mi}"><div class="mname">${mv.name.toUpperCase()}</div><div class="minfo">${info}</div></div>`;
+    }).join('');
+
+    let targetHtml='';
+    if(pending && pending.type==='move' && mon.moves[pending.moveIdx].type!=='Status'){
+      const alive = aliveActives(battleState.opponent);
+      targetHtml = `<div class="mini-label">TARGET</div><div class="target-row">` +
+        alive.map(oIdx=>{
+          const om = battleState.opponent.mons[oIdx];
+          const sel = pending.targetIdx===oIdx?' selected':'';
+          return `<div class="chip${sel}" data-slot="${slot}" data-target="${oIdx}">${om.name}</div>`;
+        }).join('') + `</div>`;
+    }
+
+    const bench = getAliveBenchIdx(battleState.player);
+    const switchSel = pending && pending.type==='switch';
+    let switchHtml = `<div class="mini-label">SWITCH</div><div class="switch-row">` +
+      bench.map(bIdx=>{
+        const bm = battleState.player.mons[bIdx];
+        const sel = switchSel && pending.benchIdx===bIdx ? ' selected':'';
+        return `<div class="chip${sel}" data-slot="${slot}" data-switch="${bIdx}">${bm.name}</div>`;
+      }).join('') + (bench.length===0?'<span style="color:var(--text-mut);font-family:var(--mono);font-size:10px;">no bench available</span>':'') + `</div>`;
+
+    block.innerHTML = `<div class="action-mon-name">${mon.name.toUpperCase()}</div>
+      <div class="move-grid">${movesHtml}</div>
+      ${targetHtml}
+      ${switchHtml}`;
+    container.appendChild(block);
+  });
+
+  // wire events
+  container.querySelectorAll('.move-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const slot = +btn.dataset.slot, mvIdx = +btn.dataset.mvidx;
+      const mon = battleState.player.mons[battleState.player.active[slot]];
+      if(mon.moves[mvIdx].type==='Status'){
+        pendingActions[slot] = {type:'protect'};
+      } else {
+        pendingActions[slot] = {type:'move', moveIdx:mvIdx, targetIdx:null, targetSide:'opponent'};
+      }
+      renderActionBlocks();
+      updateConfirmState();
+    });
+  });
+  container.querySelectorAll('.chip[data-target]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      const slot = +chip.dataset.slot, tIdx = +chip.dataset.target;
+      pendingActions[slot].targetIdx = tIdx;
+      pendingActions[slot].targetSlot = battleState.opponent.active.indexOf(tIdx);
+      renderActionBlocks();
+      updateConfirmState();
+    });
+  });
+  container.querySelectorAll('.chip[data-switch]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      const slot = +chip.dataset.slot, bIdx = +chip.dataset.switch;
+      pendingActions[slot] = {type:'switch', benchIdx:bIdx};
+      renderActionBlocks();
+      updateConfirmState();
+    });
+  });
+}
+
+function updateConfirmState(){
+  const btn = document.getElementById('confirmBtn');
+  let ready = true;
+  battleState.player.active.forEach((idx,slot)=>{
+    const mon = battleState.player.mons[idx];
+    if(mon.fainted) return;
+    const p = pendingActions[slot];
+    if(!p) { ready=false; return; }
+    if(p.type==='move' && mon.moves[p.moveIdx].type!=='Status' && (p.targetIdx===null||p.targetIdx===undefined)) ready=false;
+  });
+  btn.disabled = !ready;
+}
+
+function fullRender(){
+  renderTeamList(document.getElementById('playerTeamList'), battleState.player, true);
+  renderArenaNodes(document.getElementById('playerActiveNodes'), battleState.player, true);
+  renderArenaNodes(document.getElementById('opponentActiveNodes'), battleState.opponent, false);
+  renderStateStrip(document.getElementById('playerStateStrip'), battleState.player, true);
+  renderStateStrip(document.getElementById('opponentStateStrip'), battleState.opponent, false);
+  renderLog();
+  renderActionBlocks();
+  updateConfirmState();
+  document.getElementById('turnNumBig').textContent = String(battleState.turn).padStart(2,'0');
+  document.getElementById('hdrTurn').textContent = String(battleState.turn).padStart(2,'0');
+}
+
+/* need opponent team panel too - reuse left style but render into a spot; spec wants it "right side of arena" -
+   we mirror it inside the same left panel area isn't ideal; add a second mini list under opponent nodes */
+function renderOpponentPanel(){
+  let existing = document.getElementById('oppTeamPanel');
+  if(!existing){
+    const panel = document.createElement('div');
+    panel.className='panel';
+    panel.id='oppTeamPanel';
+    panel.innerHTML = `<div class="panel-title opp">OPPONENT // TEAM</div><div id="opponentTeamList"></div>`;
+    document.querySelector('.layout').insertBefore(panel, document.querySelector('.layout').children[2]);
+  }
+  renderTeamList(document.getElementById('opponentTeamList'), battleState.opponent, false);
+}
+
+/* ============================================================
+   CONFIRM TURN
+============================================================ */
+document.getElementById('confirmBtn').addEventListener('click', ()=>{
+  const playerActions = battleState.player.active.map((idx,slot)=>{
+    const p = pendingActions[slot];
+    if(!p) return null;
+    if(p.type==='move') return {type:'move', moveIdx:p.moveIdx, targetSide:'opponent', targetSlot:p.targetSlot};
+    if(p.type==='protect') return {type:'protect'};
+    if(p.type==='switch') return {type:'switch', benchIdx:p.benchIdx};
+    return null;
+  });
+  const opponentActions = greedyPolicy(battleState.opponent, battleState.player);
+  battleState.logging = true;
+  const winner = simulateTurn(battleState, playerActions, opponentActions);
+  battleState.logging = false;
+  pendingActions = {0:null,1:null};
+  fullRender();
+  renderOpponentPanel();
+  if(winner){
+    document.getElementById('hdrStatus').textContent = winner==='player' ? 'PLAYER WINS' : 'OPPONENT WINS';
+    log(battleState, `>>> BATTLE COMPLETE — ${winner.toUpperCase()} WINS <<<`);
+    renderLog();
+  }
+});
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  battleState = freshState();
+  pendingActions = {0:null,1:null};
+  document.getElementById('hdrStatus').textContent='READY';
+  document.getElementById('wpBig').textContent='—.—%';
+  document.getElementById('wpPlayer').textContent='—';
+  document.getElementById('wpOpp').textContent='—';
+  document.getElementById('mRollouts').textContent='—';
+  document.getElementById('mWins').textContent='—';
+  document.getElementById('mAvgTurns').textContent='—';
+  document.getElementById('mCI').textContent='—';
+  document.getElementById('candBlockP1').innerHTML='';
+  document.getElementById('candBlockP2').innerHTML='';
+  document.getElementById('simConsole').textContent='awaiting simulation...';
+  document.getElementById('terminalOut').textContent='> engine.start()\n> state.hash: —\n> engine.status: READY';
+  clearChart();
+  fullRender();
+  renderOpponentPanel();
+});
+
+/* ============================================================
+   ROLLOUT SELECTOR
+============================================================ */
+document.querySelectorAll('.rbtn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.rbtn').forEach(b=>b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedRollouts = +btn.dataset.n;
+    document.getElementById('hdrRollouts').textContent = selectedRollouts.toLocaleString();
+  });
+});
+
+/* ============================================================
+   RUN SIMULATION
+============================================================ */
+function stateHash(state){
+  const str = JSON.stringify(state.player.mons.map(m=>m.hp))+JSON.stringify(state.opponent.mons.map(m=>m.hp))+state.turn;
+  let h=0;
+  for(let i=0;i<str.length;i++){ h = (h*31 + str.charCodeAt(i))>>>0; }
+  return h.toString(16).toUpperCase().padStart(6,'0').slice(0,6);
+}
+
+document.getElementById('runSimBtn').addEventListener('click', async ()=>{
+  const btn = document.getElementById('runSimBtn');
+  btn.disabled = true;
+  document.getElementById('hdrStatus').textContent='SIMULATING';
+  const consoleEl = document.getElementById('simConsole');
+  consoleEl.textContent = 'MONTE CARLO ENGINE\n------------------\ninitializing...\nstate cloned';
+
+  const result = await runMonteCarlo(selectedRollouts, (done,total,wins)=>{
+    consoleEl.textContent = `MONTE CARLO ENGINE\n------------------\ninitializing...\nstate cloned\nrollouts: ${done.toLocaleString()} / ${total.toLocaleString()}\nestimating outcome...`;
+  });
+  consoleEl.textContent += '\n\nSIMULATION COMPLETE';
+
+  const ci = calculateConfidenceInterval(result.wins, result.n);
+  const pPct = (ci.p*100).toFixed(2);
+  document.getElementById('wpBig').textContent = pPct+'%';
+  document.getElementById('wpPlayer').textContent = pPct+'%';
+  document.getElementById('wpOpp').textContent = (100-ci.p*100).toFixed(2)+'%';
+  document.getElementById('mRollouts').textContent = result.n.toLocaleString();
+  document.getElementById('mWins').textContent = result.wins.toLocaleString();
+  document.getElementById('mAvgTurns').textContent = result.avgTurns.toFixed(1);
+  document.getElementById('mCI').textContent = `${(ci.low*100).toFixed(1)}% – ${(ci.high*100).toFixed(1)}%`;
+
+  document.getElementById('statP').textContent = `${result.wins} / ${result.n} = ${ci.p.toFixed(4)}`;
+  document.getElementById('statSE').textContent = ci.se.toFixed(4);
+  document.getElementById('statCI').textContent = `${(ci.p*100).toFixed(2)}% ± ${(1.96*ci.se*100).toFixed(2)}%`;
+
+  drawConvergence(result.checkpoints);
+
+  // candidate action evaluation (smaller sample)
+  const candRollouts = Math.min(300, Math.max(60, Math.floor(selectedRollouts/20)));
+  const p1cands = await evaluateCandidates(null,0,true,candRollouts,()=>{});
+  renderCandidates('candBlockP1', battleState.player.mons[battleState.player.active[0]], p1cands);
+  const p2cands = await evaluateCandidates(null,1,true,candRollouts,()=>{});
+  renderCandidates('candBlockP2', battleState.player.mons[battleState.player.active[1]], p2cands);
+
+  // strategy benchmark: greedy baseline vs monte-carlo-chosen best action
+  const allCands = [...p1cands, ...p2cands];
+  const best = allCands.reduce((a,b)=> b.winRate>a.winRate?b:a, allCands[0] || {winRate:ci.p,label:'N/A'});
+  const mcRate = best.winRate;
+  const greedyRate = ci.p; // pure greedy-vs-greedy baseline already computed by main rollout
+  document.getElementById('cmpMC').textContent = (mcRate*100).toFixed(1)+'%';
+  document.getElementById('cmpGreedy').textContent = (greedyRate*100).toFixed(1)+'%';
+  document.getElementById('cmpMCBar').style.width = (mcRate*100)+'%';
+  document.getElementById('cmpGreedyBar').style.width = (greedyRate*100)+'%';
+  const delta = (mcRate-greedyRate)*100;
+  document.getElementById('cmpDelta').textContent = `DELTA ${delta>=0?'+':''}${delta.toFixed(1)} pp`;
+
+  document.getElementById('terminalOut').textContent =
+`> engine.start()
+> state.hash: ${stateHash(battleState)}
+> candidate_actions: ${allCands.length}
+> rollouts: ${result.n}
+> wins: ${result.wins}
+> losses: ${result.n-result.wins}
+> p(win): ${ci.p.toFixed(4)}
+> ci95: [${ci.low.toFixed(3)}, ${ci.high.toFixed(3)}]
+> best_action: ${best.label.toUpperCase()}
+> engine.status: COMPLETE`;
+
+  document.getElementById('hdrStatus').textContent='READY';
+  btn.disabled=false;
+});
+
+function renderCandidates(containerId, mon, cands){
+  const el = document.getElementById(containerId);
+  if(!mon || mon.fainted){ el.innerHTML = `<div style="font-family:var(--mono);font-size:10px;color:var(--text-mut);">fainted — no candidates</div>`; return; }
+  const max = Math.max(...cands.map(c=>c.winRate), 0.01);
+  const bestIdx = cands.reduce((bi,c,i,arr)=> c.winRate>arr[bi].winRate?i:bi, 0);
+  el.innerHTML = `<div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-bottom:6px;">${mon.name.toUpperCase()}</div>` +
+    cands.map((c,i)=>`
+      <div class="cand-row${i===bestIdx?' best':''}">
+        <div class="cand-head"><span>${c.label.toUpperCase()}</span><b>${(c.winRate*100).toFixed(1)}%</b></div>
+        <div class="cand-track"><div class="cand-fill" style="width:${(c.winRate/max*100)}%"></div></div>
+      </div>`).join('');
+}
+
+/* ============================================================
+   CONVERGENCE CHART (hand-rolled canvas)
+============================================================ */
+function clearChart(){
+  const c = document.getElementById('convergenceChart');
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+}
+function drawConvergence(points){
+  const c = document.getElementById('convergenceChart');
+  const ctx = c.getContext('2d');
+  const W = c.width, H = c.height, pad=28;
+  ctx.clearRect(0,0,W,H);
+  if(!points.length) return;
+  const maxN = points[points.length-1].n;
+  const ys = points.map(p=>p.p);
+  let minY = Math.min(...ys)-0.03, maxY = Math.max(...ys)+0.03;
+  minY = Math.max(0,minY); maxY = Math.min(1,maxY);
+  if(maxY-minY < 0.05){ minY-=0.05; maxY+=0.05; }
+
+  ctx.strokeStyle = '#1B212B';
+  ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(pad,10); ctx.lineTo(pad,H-pad); ctx.lineTo(W-6,H-pad);
+  ctx.stroke();
+
+  ctx.fillStyle='#4E586B';
+  ctx.font='9px monospace';
+  ctx.fillText((maxY*100).toFixed(0)+'%', 2, 14);
+  ctx.fillText((minY*100).toFixed(0)+'%', 2, H-pad+3);
+  ctx.fillText('N='+maxN.toLocaleString(), W-70, H-6);
+
+  function xForN(n){ return pad + (n/maxN)*(W-pad-10); }
+  function yForP(p){ return (H-pad) - ((p-minY)/(maxY-minY))*(H-pad-14); }
+
+  ctx.strokeStyle = '#45E0C4';
+  ctx.lineWidth=1.6;
+  ctx.beginPath();
+  points.forEach((pt,i)=>{
+    const x=xForN(pt.n), y=yForP(pt.p);
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle='#45E0C4';
+  points.forEach(pt=>{
+    const x=xForN(pt.n), y=yForP(pt.p);
+    ctx.beginPath(); ctx.arc(x,y,2.3,0,Math.PI*2); ctx.fill();
+  });
+}
+
+/* ============================================================
+   LOOKAHEAD BADGE TOGGLE
+============================================================ */
+document.getElementById('lookaheadBadge').addEventListener('click', ()=>{
+  document.getElementById('lookaheadFlow').classList.toggle('show');
+});
+
+/* ============================================================
+   INIT
+============================================================ */
+fullRender();
+renderOpponentPanel();
+</script>
+</body>
+</html>
