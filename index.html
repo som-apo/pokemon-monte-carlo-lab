@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pokémon Monte Carlo Battle Lab</title>
+<style>
+  :root{
+    --bg:        #0a0e13;
+    --panel:     #0f151c;
+    --panel-2:   #121a22;
+    --border:    #1d2a35;
+    --border-lt: #26384a;
+    --text:      #c9d6de;
+    --text-dim:  #6c8493;
+    --green:     #3ef08c;
+    --green-dim: #1f7a4c;
+    --cyan:      #35e0ff;
+    --amber:     #ffcf5c;
+    --red:       #ff5c6c;
+    --purple:    #b98cff;
+    --mono: "JetBrains Mono","Fira Code","SF Mono","Consolas","Courier New",monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:var(--mono); font-size:13px;
+  }
+  ::selection{ background:var(--green-dim); color:#fff; }
+  ::-webkit-scrollbar{ width:8px; height:8px; }
+  ::-webkit-scrollbar-track{ background:var(--panel); }
+  ::-webkit-scrollbar-thumb{ background:var(--border-lt); border-radius:4px; }
+
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 16px; border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg,#0d131a,#0a0e13);
+  }
+  header .brand{ display:flex; align-items:center; gap:10px; }
+  header .brand .dot{
+    width:9px; height:9px; border-radius:50%; background:var(--green);
+    box-shadow:0 0 8px var(--green); animation:pulse 1.8s infinite ease-in-out;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.35;} }
+  header h1{ font-size:14px; margin:0; letter-spacing:.06em; color:#eaf6ef; font-weight:600; }
+  header .sub{ color:var(--text-dim); font-size:11px; letter-spacing:.04em; }
+  header .actions button{ margin-left:8px; }
+
+  .btn{
+    font-family:var(--mono); background:var(--panel-2); color:var(--text);
+    border:1px solid var(--border-lt); padding:7px 12px; border-radius:3px;
+    cursor:pointer; font-size:11px; letter-spacing:.04em; transition:.12s;
+  }
+  .btn:hover{ border-color:var(--green); color:#eaf6ef; }
+  .btn:active{ transform:translateY(1px); }
+  .btn:disabled{ opacity:.35; cursor:not-allowed; }
+  .btn.primary{ background:var(--green-dim); border-color:var(--green); color:#eaffee; }
+  .btn.primary:hover{ background:#25915b; }
+  .btn.block{ width:100%; }
+  .btn.small{ padding:4px 8px; font-size:10px; }
+  .btn.ghost{ background:transparent; }
+
+  .layout{
+    display:grid; grid-template-columns:280px 1fr 340px;
+    gap:12px; padding:12px; height:calc(100vh - 49px);
+  }
+  .panel{
+    background:var(--panel); border:1px solid var(--border); border-radius:5px;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  .panel-head{
+    padding:9px 12px; border-bottom:1px solid var(--border);
+    font-size:10.5px; letter-spacing:.12em; color:var(--text-dim); text-transform:uppercase;
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .panel-body{ padding:10px; overflow-y:auto; flex:1; }
+
+  /* ---------- LEFT: TEAM CARDS ---------- */
+  .side-label{
+    font-size:10px; letter-spacing:.14em; color:var(--text-dim); margin:10px 0 6px;
+    text-transform:uppercase;
+  }
+  .side-label:first-child{ margin-top:0; }
+  .mon-card{
+    border:1px solid var(--border); border-radius:4px; padding:8px; margin-bottom:6px;
+    background:var(--panel-2); position:relative; transition:.15s;
+  }
+  .mon-card.is-active{ border-color:var(--green-dim); box-shadow:inset 0 0 0 1px rgba(62,240,140,.15); }
+  .mon-card.is-fainted{ opacity:.4; }
+  .mon-card .row1{ display:flex; justify-content:space-between; align-items:baseline; }
+  .mon-card .name{ font-weight:600; color:#e7f1f5; font-size:12px; }
+  .mon-card .type{ font-size:9px; color:var(--cyan); letter-spacing:.06em; }
+  .mon-card .tag{
+    font-size:8.5px; padding:1px 5px; border-radius:2px; letter-spacing:.08em;
+    border:1px solid var(--border-lt); color:var(--text-dim);
+  }
+  .mon-card .tag.active{ color:var(--green); border-color:var(--green-dim); }
+  .mon-card .tag.fainted{ color:var(--red); border-color:#5a2530; }
+  .hp-track{
+    height:6px; background:#050809; border-radius:3px; overflow:hidden; margin-top:6px;
+    border:1px solid var(--border);
+  }
+  .hp-fill{ height:100%; transition:width .25s ease; }
+  .hp-text{ font-size:9.5px; color:var(--text-dim); margin-top:3px; display:flex; justify-content:space-between; }
+
+  /* ---------- CENTER: ARENA ---------- */
+  .arena{ padding:12px; display:flex; flex-direction:column; gap:10px; overflow-y:auto; }
+  .vs-row{ display:flex; align-items:stretch; gap:10px; }
+  .vs-col{ flex:1; display:flex; flex-direction:column; gap:8px; }
+  .active-mon{
+    border:1px solid var(--border-lt); border-radius:5px; padding:10px;
+    background:radial-gradient(circle at 30% 20%, #142029, #0d1218 70%);
+  }
+  .active-mon.opp{ background:radial-gradient(circle at 70% 20%, #1f1420, #0d1218 70%); }
+  .active-mon .top{ display:flex; justify-content:space-between; align-items:center; }
+  .active-mon .nm{ font-size:13px; font-weight:700; color:#f2f8fa; }
+  .active-mon .ty{ font-size:9.5px; color:var(--purple); }
+  .sprite{
+    font-size:34px; text-align:center; margin:6px 0; opacity:.9; user-select:none;
+  }
+  .vs-mid{
+    align-self:center; color:var(--text-dim); font-size:16px; font-weight:700;
+    padding:0 4px; letter-spacing:.1em;
+  }
+  .empty-slot{
+    border:1px dashed var(--border); border-radius:5px; padding:20px 10px; text-align:center;
+    color:var(--text-dim); font-size:11px;
+  }
+
+  .log-box{
+    flex:1; min-height:150px; background:#070a0d; border:1px solid var(--border);
+    border-radius:5px; padding:8px 10px; overflow-y:auto; font-size:11.5px; line-height:1.55;
+  }
+  .log-box .entry{ color:var(--text-dim); }
+  .log-box .entry.hit{ color:var(--text); }
+  .log-box .entry.crit-type{ color:var(--amber); }
+  .log-box .entry.faint{ color:var(--red); }
+  .log-box .entry.switch{ color:var(--cyan); }
+  .log-box .entry.win{ color:var(--green); font-weight:700; }
+  .log-box .turnmark{ color:#3a4c58; margin-top:4px; border-top:1px dashed #1a242c; padding-top:4px; }
+
+  .controls{
+    border:1px solid var(--border); border-radius:5px; padding:10px; background:var(--panel-2);
+  }
+  .controls h3{ margin:0 0 8px; font-size:10.5px; letter-spacing:.1em; color:var(--text-dim); text-transform:uppercase; }
+  .action-row{
+    display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; align-items:center; margin-bottom:6px;
+    padding:6px; border:1px solid var(--border); border-radius:4px; background:var(--panel);
+  }
+  .action-row .pname{ font-size:11px; color:var(--green); font-weight:600; }
+  select{
+    font-family:var(--mono); background:#0b1015; color:var(--text); border:1px solid var(--border-lt);
+    padding:5px 6px; border-radius:3px; font-size:11px; width:100%;
+  }
+  select:focus{ outline:1px solid var(--green); }
+  .play-turn-row{ display:flex; gap:8px; margin-top:8px; }
+
+  /* ---------- RIGHT: MC ENGINE ---------- */
+  .metric-big{
+    text-align:center; padding:14px 6px 8px; border-bottom:1px solid var(--border);
+  }
+  .metric-big .val{ font-size:38px; font-weight:800; color:var(--green); line-height:1; text-shadow:0 0 18px rgba(62,240,140,.25); }
+  .metric-big .lbl{ font-size:10px; color:var(--text-dim); letter-spacing:.12em; margin-top:4px; text-transform:uppercase; }
+  .metric-big .sub{ font-size:10px; color:var(--text-dim); margin-top:6px; }
+
+  .compare-box{
+    display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px; border-bottom:1px solid var(--border);
+  }
+  .compare-cell{
+    border:1px solid var(--border-lt); border-radius:4px; padding:8px; background:var(--panel-2);
+  }
+  .compare-cell .tag{ font-size:9px; letter-spacing:.1em; color:var(--text-dim); text-transform:uppercase; }
+  .compare-cell.mc .tag{ color:var(--cyan); }
+  .compare-cell.greedy .tag{ color:var(--amber); }
+  .compare-cell .mv{ font-size:12.5px; font-weight:700; color:#eef6f8; margin-top:4px; }
+  .compare-cell .dt{ font-size:10px; color:var(--text-dim); margin-top:2px; }
+  .agree-banner{
+    margin:0 10px 10px; padding:6px 8px; border-radius:4px; font-size:10.5px; text-align:center;
+    letter-spacing:.03em;
+  }
+  .agree-banner.agree{ background:rgba(62,240,140,.08); border:1px solid var(--green-dim); color:var(--green); }
+  .agree-banner.diverge{ background:rgba(255,207,92,.08); border:1px solid #6b5b28; color:var(--amber); }
+
+  .section-title{
+    font-size:10px; letter-spacing:.1em; color:var(--text-dim); text-transform:uppercase;
+    padding:10px 10px 4px;
+  }
+  .bars{ padding:0 10px; }
+  .bar-row{ margin-bottom:8px; }
+  .bar-row .bhead{ display:flex; justify-content:space-between; font-size:10.5px; margin-bottom:3px; }
+  .bar-row .bhead .bname{ color:var(--text); }
+  .bar-row .bhead .bpct{ color:var(--cyan); font-weight:700; }
+  .bar-track{ height:9px; background:#0a0f14; border:1px solid var(--border); border-radius:3px; overflow:hidden; }
+  .bar-fill{ height:100%; background:linear-gradient(90deg,var(--green-dim),var(--cyan)); transition:width .3s ease; }
+  .bar-fill.best{ background:linear-gradient(90deg,#1f7a4c,var(--green)); }
+
+  .chart-wrap{ padding:8px 10px 4px; }
+  canvas{ width:100%; display:block; background:#070a0d; border:1px solid var(--border); border-radius:4px; }
+
+  .sim-controls{ padding:10px; border-top:1px solid var(--border); }
+  .field{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; font-size:10.5px; color:var(--text-dim); }
+  .field input[type=number]{
+    width:70px; font-family:var(--mono); background:#0b1015; color:var(--text);
+    border:1px solid var(--border-lt); border-radius:3px; padding:4px 6px; font-size:11px; text-align:right;
+  }
+  .progress-line{ font-size:10px; color:var(--text-dim); margin-top:6px; min-height:14px; }
+
+  .footer-note{ padding:8px 12px; font-size:10px; color:#3a4c58; border-top:1px solid var(--border); text-align:center; }
+
+  @media (max-width: 1150px){
+    .layout{ grid-template-columns:1fr; height:auto; }
+    .panel{ max-height:520px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="dot"></div>
+    <div>
+      <h1>POKÉMON MONTE CARLO BATTLE LAB</h1>
+      <div class="sub">4v4 doubles &middot; strategy backtest: monte carlo vs greedy</div>
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn" id="btnReset">↺ RESET BATTLE</button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- LEFT PANEL -->
+  <div class="panel">
+    <div class="panel-head"><span>Teams &amp; Status</span><span id="turnCounter">TURN 1</span></div>
+    <div class="panel-body" id="teamsPanel"></div>
+  </div>
+
+  <!-- CENTER PANEL -->
+  <div class="panel">
+    <div class="panel-head"><span>Battle Arena</span><span id="battleState">IN PROGRESS</span></div>
+    <div class="arena">
+      <div class="vs-row" id="vsRow"></div>
+
+      <div class="log-box" id="logBox"></div>
+
+      <div class="controls">
+        <h3>Action Controls — Your Move</h3>
+        <div id="actionRows"></div>
+        <div class="play-turn-row">
+          <button class="btn primary block" id="btnPlayTurn">▶ PLAY TURN</button>
+          <button class="btn" id="btnFillMC" title="Fill controls with Monte Carlo's top pick">⇪ USE MC PICK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="panel">
+    <div class="panel-head"><span>Monte Carlo Engine</span><span id="mcStatus">IDLE</span></div>
+    <div class="panel-body" style="padding:0;">
+
+      <div class="metric-big">
+        <div class="val" id="winProbVal">--%</div>
+        <div class="lbl">Win Probability (Top MC Move)</div>
+        <div class="sub" id="winProbSub">Run a simulation to populate this metric</div>
+      </div>
+
+      <div class="compare-box">
+        <div class="compare-cell mc">
+          <div class="tag">Monte Carlo</div>
+          <div class="mv" id="mcPickName">—</div>
+          <div class="dt" id="mcPickDetail">no data yet</div>
+        </div>
+        <div class="compare-cell greedy">
+          <div class="tag">Greedy</div>
+          <div class="mv" id="greedyPickName">—</div>
+          <div class="dt" id="greedyPickDetail">no data yet</div>
+        </div>
+      </div>
+      <div class="agree-banner" id="agreeBanner" style="display:none;"></div>
+
+      <div class="section-title">Move Evaluation — Win % by Candidate</div>
+      <div class="bars" id="barsWrap"><div class="progress-line" style="padding:4px 0;">No simulation run yet.</div></div>
+
+      <div class="section-title">Convergence — Win Rate vs Rollouts (N)</div>
+      <div class="chart-wrap">
+        <canvas id="convCanvas" height="120"></canvas>
+      </div>
+
+      <div class="sim-controls">
+        <div class="field">
+          <span>Analyze Pokémon</span>
+          <select id="analyzeSelect" style="width:150px;"></select>
+        </div>
+        <div class="field">
+          <span>Rollouts per move (N)</span>
+          <input type="number" id="rolloutsInput" value="400" min="20" step="20">
+        </div>
+        <div class="field">
+          <span>Batch size</span>
+          <input type="number" id="batchInput" value="20" min="5" step="5">
+        </div>
+        <button class="btn primary block" id="btnRunSim">⚙ RUN SIMULATION</button>
+        <div class="progress-line" id="simProgress"></div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+<div class="footer-note">Simple 4v4 doubles engine · damage = floor((power·atk/def)·typeMult·rand[0.85,1.0]) · all rollouts run on cloned state</div>
+
+<script>
+(function(){
+"use strict";
+
+/* =========================================================
+   1. STATIC DATA
+   ========================================================= */
+const PLAYER_TEMPLATES = [
+  { id:"pikachu",  name:"Pikachu",  type:"Electric",  maxHp:110, atk:55,  def:40,  spd:120,
+    moves:[{name:"Thunderbolt",power:90,type:"Electric"},{name:"Quick Attack",power:40,type:"Normal"}] },
+  { id:"charizard",name:"Charizard",type:"Fire",       maxHp:130, atk:84,  def:78,  spd:100,
+    moves:[{name:"Flamethrower",power:90,type:"Fire"},{name:"Wing Attack",power:60,type:"Normal"}] },
+  { id:"garchomp", name:"Garchomp", type:"Ground",     maxHp:140, atk:130, def:95,  spd:102,
+    moves:[{name:"Earthquake",power:100,type:"Ground"},{name:"Dragon Claw",power:80,type:"Dragon"}] },
+  { id:"lucario",  name:"Lucario",  type:"Fighting",   maxHp:120, atk:110, def:70,  spd:90,
+    moves:[{name:"Aura Sphere",power:80,type:"Fighting"},{name:"Close Combat",power:100,type:"Fighting"}] }
+];
+
+const OPPONENT_TEMPLATES = [
+  { id:"greninja",  name:"Greninja",  type:"Water",   maxHp:115, atk:95,  def:67,  spd:122,
+    moves:[{name:"Hydro Pump",power:100,type:"Water"},{name:"Night Slash",power:70,type:"Dark"}] },
+  { id:"tyranitar", name:"Tyranitar", type:"Dark",    maxHp:150, atk:134, def:110, spd:61,
+    moves:[{name:"Crunch",power:80,type:"Dark"},{name:"Stone Edge",power:100,type:"Rock"}] },
+  { id:"gardevoir", name:"Gardevoir", type:"Psychic", maxHp:115, atk:65,  def:65,  spd:80,
+    moves:[{name:"Psychic",power:90,type:"Psychic"},{name:"Moonblast",power:95,type:"Fairy"}] },
+  { id:"dragonite", name:"Dragonite", type:"Dragon",  maxHp:145, atk:134, def:95,  spd:80,
+    moves:[{name:"Dragon Claw",power:80,type:"Dragon"},{name:"Hyper Beam",power:100,type:"Normal"}] }
+];
+
+const SPRITE = {
+  pikachu:"⚡", charizard:"🔥", garchomp:"🦈", lucario:"🥋",
+  greninja:"💧", tyranitar:"🪨", gardevoir:"🔮", dragonite:"🐉"
+};
+
+const TYPE_TABLE = {
+  "Electric->Water": 2, "Ground->Electric": 2, "Electric->Ground": 0,
+  "Water->Fire": 2, "Fire->Grass": 2, "Dragon->Dragon": 2
+};
+
+const CONV_COLORS = ["#3ef08c","#35e0ff","#ffcf5c","#b98cff"];
+
+/* =========================================================
+   2. STATE
+   ========================================================= */
+let state = null;
+let mcResults = null;      // { candidates:[{moveIndex,targetTeamIndex,wins,total,winRate,label,convergence:[[n,rate],...]}], analyzedTeamIndex, greedy:{...} }
+let simRunning = false;
+
+function makeTeam(templates){
+  return templates.map((t,i)=>({
+    id:t.id, name:t.name, type:t.type, maxHp:t.maxHp, atk:t.atk, def:t.def, spd:t.spd,
+    moves:t.moves.map(m=>({...m})),
+    hp:t.maxHp,
+    status: i<2 ? "active" : "bench",
+    slot: i<2 ? i : null
+  }));
+}
+
+function createInitialState(){
+  return {
+    player:{ team: makeTeam(PLAYER_TEMPLATES) },
+    opponent:{ team: makeTeam(OPPONENT_TEMPLATES) },
+    log: [{text:"Battle start! Choose an action for each active Pokémon.", cls:"switch"}],
+    winner: null,
+    turn: 1
+  };
+}
+
+/* =========================================================
+   3. CORE ENGINE FUNCTIONS (required names)
+   ========================================================= */
+
+// Deep clone of battle state so rollouts never touch live UI state.
+function cloneState(s){
+  if (typeof structuredClone === "function") return structuredClone(s);
+  return JSON.parse(JSON.stringify(s));
+}
+
+function typeMultiplier(atkType, defType){
+  const key = atkType + "->" + defType;
+  return TYPE_TABLE.hasOwnProperty(key) ? TYPE_TABLE[key] : 1;
+}
+
+// Damage = floor((MovePower * Attack / Defense) * TypeMultiplier * Random(0.85,1.0))
+function calculateDamage(attacker, move, defender, rngFn){
+  const rng = rngFn || Math.random;
+  const mult = typeMultiplier(move.type, defender.type);
+  if (mult === 0) return 0; // immune
+  const raw = (move.power * attacker.atk / Math.max(1, defender.def)) * mult * (0.85 + rng() * 0.15);
+  let dmg = Math.floor(raw);
+  if (!isFinite(dmg) || isNaN(dmg) || dmg < 1) dmg = 1;
+  return dmg;
+}
+
+function getActive(sideState){
+  return sideState.team.filter(p => p.status === "active" && p.hp > 0)
+                        .sort((a,b) => a.slot - b.slot);
+}
+
+function fillActiveSlots(sideState){
+  const occupied = [null, null];
+  sideState.team.forEach(p => { if (p.status === "active" && p.hp > 0) occupied[p.slot] = p; });
+  for (let s = 0; s < 2; s++){
+    if (!occupied[s]){
+      const bench = sideState.team.find(p => p.status === "bench" && p.hp > 0);
+      if (bench){ bench.status = "active"; bench.slot = s; }
+    }
+  }
+}
+
+function applyDamage(target, dmg, sState, log){
+  target.hp = Math.max(0, target.hp - dmg);
+  if (log) log.push({text:`${target.name} takes ${dmg} dmg (${target.hp}/${target.maxHp} HP)`, cls:"hit"});
+  if (target.hp <= 0){
+    target.status = "fainted";
+    target.slot = null;
+    if (log) log.push({text:`${target.name} fainted!`, cls:"faint"});
+    fillActiveSlots(sState);
+  }
+}
+
+function checkWinner(s){
+  const pAlive = s.player.team.some(p => p.hp > 0);
+  const oAlive = s.opponent.team.some(p => p.hp > 0);
+  if (!pAlive) s.winner = "opponent";
+  else if (!oAlive) s.winner = "player";
+  return s.winner;
+}
+
+// Build a random-but-valid action for every active, non-fainted pokemon on a side.
+function randomActions(s, sideKey){
+  const side = s[sideKey];
+  const oppKey = sideKey === "player" ? "opponent" : "player";
+  const oppActives = getActive(s[oppKey]);
+  const actions = [];
+  getActive(side).forEach(p => {
+    if (!oppActives.length) return;
+    const moveIndex = Math.floor(Math.random() * p.moves.length);
+    const target = oppActives[Math.floor(Math.random() * oppActives.length)];
+    actions.push({ teamIndex: side.team.indexOf(p), moveIndex, targetTeamIndex: oppKey === "opponent" ? s.opponent.team.indexOf(target) : s.player.team.indexOf(target) });
+  });
+  return actions;
+}
+
+// Greedy strategy: highest immediate calculated damage (deterministic midpoint roll, no RNG noise).
+function greedyChoice(s, sideKey, teamIndex){
+  const side = s[sideKey];
+  const oppKey = sideKey === "player" ? "opponent" : "player";
+  const attacker = side.team[teamIndex];
+  const oppActives = getActive(s[oppKey]);
+  let best = null;
+  attacker.moves.forEach((move, moveIndex) => {
+    oppActives.forEach(target => {
+      const targetIndex = s[oppKey].team.indexOf(target);
+      const dmg = calculateDamage(attacker, move, target, () => 0.5); // deterministic midpoint estimate
+      if (!best || dmg > best.dmg){
+        best = { moveIndex, targetTeamIndex: targetIndex, dmg, moveName: move.name, targetName: target.name };
+      }
+    });
+  });
+  return best;
+}
+
+// Execute one full turn: resolve all queued actions in speed order, handle faints/auto-switch, check winner.
+function playTurn(s, playerActions, opponentActions){
+  const all = [];
+  playerActions.forEach(a => all.push({ ...a, side:"player" }));
+  opponentActions.forEach(a => all.push({ ...a, side:"opponent" }));
+
+  all.forEach(a => {
+    const atk = s[a.side].team[a.teamIndex];
+    a.speed = (atk ? atk.spd : 0) + Math.random() * 0.01; // tiny jitter breaks ties
+  });
+  all.sort((a,b) => b.speed - a.speed);
+
+  for (const action of all){
+    if (s.winner) break;
+    const side = s[action.side];
+    const oppKey = action.side === "player" ? "opponent" : "player";
+    const attacker = side.team[action.teamIndex];
+    if (!attacker || attacker.status !== "active" || attacker.hp <= 0) continue; // fainted before its turn
+
+    const move = attacker.moves[action.moveIndex];
+    let target = s[oppKey].team[action.targetTeamIndex];
+    if (!target || target.hp <= 0){
+      const alt = getActive(s[oppKey])[0];
+      if (!alt) continue;
+      target = alt;
+    }
+    const dmg = calculateDamage(attacker, move, target);
+    if (dmg === 0){
+      s.log.push({text:`${attacker.name} used ${move.name} on ${target.name} — no effect!`, cls:"crit-type"});
+    } else {
+      s.log.push({text:`${attacker.name} used ${move.name} → ${target.name}`, cls:"hit"});
+    }
+    applyDamage(target, dmg, s[oppKey], s.log);
+    checkWinner(s);
+  }
+  if (!s.winner) s.turn++;
+  return s;
+}
+
+/* =========================================================
+   4. MONTE CARLO ROLLOUTS
+   ========================================================= */
+
+// Play a battle to completion using fully random valid moves both sides, from an already-cloned state.
+function simulateRandomBattleToEnd(s, maxTurns){
+  let turns = 0;
+  const cap = maxTurns || 60;
+  while (!s.winner && turns < cap){
+    const pA = randomActions(s, "player");
+    const oA = randomActions(s, "opponent");
+    playTurn(s, pA, oA);
+    turns++;
+  }
+  if (!s.winner){
+    // turn cap reached: decide by total remaining HP% advantage to avoid infinite games biasing results
+    const pHP = s.player.team.reduce((sum,p)=>sum+p.hp,0) / s.player.team.reduce((sum,p)=>sum+p.maxHp,0);
+    const oHP = s.opponent.team.reduce((sum,p)=>sum+p.hp,0) / s.opponent.team.reduce((sum,p)=>sum+p.maxHp,0);
+    s.winner = pHP >= oHP ? "player" : "opponent";
+  }
+  return s.winner;
+}
+
+// Run ONE rollout for a forced (moveIndex, targetTeamIndex) on state.player.team[teamIndex]; returns true if player wins.
+function runSingleRollout(baseState, teamIndex, moveIndex, targetTeamIndex){
+  const s = cloneState(baseState);
+  const forced = { teamIndex, moveIndex, targetTeamIndex };
+  const pActions = randomActions(s, "player").map(a => a.teamIndex === teamIndex ? forced : a);
+  if (!pActions.some(a => a.teamIndex === teamIndex)) pActions.push(forced);
+  const oActions = randomActions(s, "opponent");
+  playTurn(s, pActions, oActions);
+  if (!s.winner) simulateRandomBattleToEnd(s);
+  return s.winner === "player";
+}
+
+// Monte Carlo: for every available (move,target) candidate, simulate N full random rollouts, return win rates.
+function runMonteCarlo(baseState, teamIndex, candidates, rolloutsPerCandidate){
+  return candidates.map(c => {
+    let wins = 0;
+    for (let i = 0; i < rolloutsPerCandidate; i++){
+      if (runSingleRollout(baseState, teamIndex, c.moveIndex, c.targetTeamIndex)) wins++;
+    }
+    return { ...c, wins, total: rolloutsPerCandidate, winRate: wins / rolloutsPerCandidate };
+  });
+}
+
+/* =========================================================
+   5. UI STATE / RENDERING
+   ========================================================= */
+let uiActions = {}; // teamIndex -> {moveIndex, targetTeamIndex}  (for player's active pokemon)
+
+function typeColor(t){
+  const c = {Electric:"#ffcf5c",Fire:"#ff7a4c",Water:"#35c8ff",Ground:"#c9a56a",Dragon:"#8c7bff",
+             Fighting:"#ff8c6b",Dark:"#9d8cff",Psychic:"#ff7ad1",Fairy:"#ffb3e6",Rock:"#c9b48a",Normal:"#c9d6de"};
+  return c[t] || "#c9d6de";
+}
+function hpColor(pct){
+  if (pct > 0.5) return "#3ef08c";
+  if (pct > 0.2) return "#ffcf5c";
+  return "#ff5c6c";
+}
+
+function renderTeams(){
+  const wrap = document.getElementById("teamsPanel");
+  let html = "";
+  [["player","YOUR TEAM"], ["opponent","OPPONENT"]].forEach(([key,label]) => {
+    html += `<div class="side-label">${label}</div>`;
+    state[key].team.forEach(p => {
+      const pct = p.hp / p.maxHp;
+      const statusCls = p.status === "fainted" ? "is-fainted" : (p.status === "active" ? "is-active" : "");
+      const tag = p.status === "fainted" ? `<span class="tag fainted">FAINTED</span>`
+                : p.status === "active" ? `<span class="tag active">ACTIVE·${p.slot}</span>`
+                : `<span class="tag">BENCH</span>`;
+      html += `
+        <div class="mon-card ${statusCls}">
+          <div class="row1">
+            <span class="name">${SPRITE[p.id]||""} ${p.name}</span>
+            ${tag}
+          </div>
+          <div class="type" style="color:${typeColor(p.type)}">${p.type.toUpperCase()}</div>
+          <div class="hp-track"><div class="hp-fill" style="width:${Math.max(0,pct*100)}%;background:${hpColor(pct)}"></div></div>
+          <div class="hp-text"><span>${p.hp}/${p.maxHp} HP</span><span>SPD ${p.spd}</span></div>
+        </div>`;
+    });
+  });
+  wrap.innerHTML = html;
+  document.getElementById("turnCounter").textContent = "TURN " + state.turn;
+}
+
+function renderArena(){
+  const row = document.getElementById("vsRow");
+  const pActive = getActive(state.player);
+  const oActive = getActive(state.opponent);
+  function slotHtml(p, oppClass){
+    if (!p) return `<div class="empty-slot">— no active Pokémon —</div>`;
+    const pct = p.hp / p.maxHp;
+    return `
+      <div class="active-mon ${oppClass||""}">
+        <div class="top"><span class="nm">${p.name}</span><span class="ty" style="color:${typeColor(p.type)}">${p.type}</span></div>
+        <div class="sprite">${SPRITE[p.id]||"❔"}</div>
+        <div class="hp-track"><div class="hp-fill" style="width:${Math.max(0,pct*100)}%;background:${hpColor(pct)}"></div></div>
+        <div class="hp-text"><span>${p.hp}/${p.maxHp} HP</span><span>ATK ${p.atk} / DEF ${p.def}</span></div>
+      </div>`;
+  }
+  row.innerHTML = `
+    <div class="vs-col">${slotHtml(pActive[0])}${slotHtml(pActive[1])}</div>
+    <div class="vs-mid">VS</div>
+    <div class="vs-col">${slotHtml(oActive[0],"opp")}${slotHtml(oActive[1],"opp")}</div>
+  `;
+}
+
+function renderLog(){
+  const box = document.getElementById("logBox");
+  box.innerHTML = state.log.map(e => `<div class="entry ${e.cls||""}">${e.text}</div>`).join("");
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderActionControls(){
+  const wrap = document.getElementById("actionRows");
+  const pActive = getActive(state.player);
+  const oActive = getActive(state.opponent);
+  if (state.winner || !pActive.length){
+    wrap.innerHTML = `<div class="progress-line">No actions available.</div>`;
+    document.getElementById("btnPlayTurn").disabled = true;
+    return;
+  }
+  document.getElementById("btnPlayTurn").disabled = false;
+  let html = "";
+  pActive.forEach(p => {
+    const teamIndex = state.player.team.indexOf(p);
+    if (!uiActions[teamIndex] || uiActions[teamIndex].moveIndex >= p.moves.length){
+      uiActions[teamIndex] = { moveIndex:0, targetTeamIndex: oActive.length ? state.opponent.team.indexOf(oActive[0]) : 0 };
+    }
+    const cur = uiActions[teamIndex];
+    const moveOpts = p.moves.map((m,i)=>`<option value="${i}" ${i==cur.moveIndex?"selected":""}>${m.name} (${m.power}, ${m.type})</option>`).join("");
+    const targetOpts = oActive.map(t => {
+      const ti = state.opponent.team.indexOf(t);
+      return `<option value="${ti}" ${ti==cur.targetTeamIndex?"selected":""}>${t.name} (${t.hp}HP)</option>`;
+    }).join("");
+    html += `
+      <div class="action-row">
+        <span class="pname">${p.name}</span>
+        <select data-role="move" data-team="${teamIndex}">${moveOpts}</select>
+        <select data-role="target" data-team="${teamIndex}">${targetOpts}</select>
+      </div>`;
+  });
+  wrap.innerHTML = html;
+  wrap.querySelectorAll("select").forEach(sel => {
+    sel.addEventListener("change", () => {
+      const t = parseInt(sel.dataset.team,10);
+      const role = sel.dataset.role;
+      if (role === "move") uiActions[t].moveIndex = parseInt(sel.value,10);
+      else uiActions[t].targetTeamIndex = parseInt(sel.value,10);
+    });
+  });
+}
+
+function renderAnalyzeSelect(){
+  const sel = document.getElementById("analyzeSelect");
+  const pActive = getActive(state.player);
+  const prevVal = sel.value;
+  sel.innerHTML = pActive.map(p => {
+    const ti = state.player.team.indexOf(p);
+    return `<option value="${ti}">${p.name}</option>`;
+  }).join("");
+  if ([...sel.options].some(o=>o.value===prevVal)) sel.value = prevVal;
+}
+
+function renderBattleState(){
+  const el = document.getElementById("battleState");
+  if (state.winner === "player"){ el.textContent = "YOU WIN"; el.style.color = "var(--green)"; }
+  else if (state.winner === "opponent"){ el.textContent = "YOU LOSE"; el.style.color = "var(--red)"; }
+  else { el.textContent = "IN PROGRESS"; el.style.color = "var(--text-dim)"; }
+}
+
+function updateUI(){
+  renderTeams();
+  renderArena();
+  renderLog();
+  renderActionControls();
+  renderAnalyzeSelect();
+  renderBattleState();
+}
+
+/* =========================================================
+   6. MC RESULT PANEL RENDERING
+   ========================================================= */
+function renderMCPanel(){
+  if (!mcResults){
+    document.getElementById("winProbVal").textContent = "--%";
+    document.getElementById("winProbSub").textContent = "Run a simulation to populate this metric";
+    document.getElementById("mcPickName").textContent = "—";
+    document.getElementById("mcPickDetail").textContent = "no data yet";
+    document.getElementById("greedyPickName").textContent = "—";
+    document.getElementById("greedyPickDetail").textContent = "no data yet";
+    document.getElementById("agreeBanner").style.display = "none";
+    document.getElementById("barsWrap").innerHTML = `<div class="progress-line" style="padding:4px 0;">No simulation run yet.</div>`;
+    drawConvergence([]);
+    return;
+  }
+  const cands = mcResults.candidates.slice().sort((a,b)=>b.winRate-a.winRate);
+  const top = cands[0];
+  document.getElementById("winProbVal").textContent = (top.winRate*100).toFixed(1) + "%";
+  document.getElementById("winProbSub").textContent = `${top.label} · ${top.total} rollouts`;
+
+  document.getElementById("mcPickName").textContent = top.label;
+  document.getElementById("mcPickDetail").textContent = `win rate ${(top.winRate*100).toFixed(1)}% over ${top.total} rollouts`;
+
+  const g = mcResults.greedy;
+  document.getElementById("greedyPickName").textContent = g.label;
+  document.getElementById("greedyPickDetail").textContent = `≈${g.dmg} immediate dmg estimate`;
+
+  const banner = document.getElementById("agreeBanner");
+  banner.style.display = "block";
+  if (g.moveIndex === top.moveIndex && g.targetTeamIndex === top.targetTeamIndex){
+    banner.className = "agree-banner agree";
+    banner.textContent = "✓ MONTE CARLO AND GREEDY AGREE ON THIS TURN";
+  } else {
+    banner.className = "agree-banner diverge";
+    banner.textContent = "⚠ STRATEGIES DIVERGE — MC sees a better long-run play than raw damage";
+  }
+
+  const barsWrap = document.getElementById("barsWrap");
+  barsWrap.innerHTML = cands.map((c,i) => `
+    <div class="bar-row">
+      <div class="bhead"><span class="bname">${c.label}</span><span class="bpct">${(c.winRate*100).toFixed(1)}%</span></div>
+      <div class="bar-track"><div class="bar-fill ${i===0?"best":""}" style="width:${Math.max(2,c.winRate*100)}%"></div></div>
+    </div>`).join("");
+
+  drawConvergence(cands);
+}
+
+function drawConvergence(cands){
+  const canvas = document.getElementById("convCanvas");
+  const ctx = canvas.getContext("2d");
+  const w = canvas.clientWidth || 300, h = 120;
+  canvas.width = w * devicePixelRatio; canvas.height = h * devicePixelRatio;
+  canvas.style.height = h + "px";
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  ctx.clearRect(0,0,w,h);
+
+  // gridlines
+  ctx.strokeStyle = "#16202a"; ctx.lineWidth = 1;
+  for (let i=0;i<=4;i++){
+    const y = 10 + (h-24)*(i/4);
+    ctx.beginPath(); ctx.moveTo(34,y); ctx.lineTo(w-8,y); ctx.stroke();
+  }
+  ctx.fillStyle = "#4a6070"; ctx.font = "9px monospace";
+  [100,75,50,25,0].forEach((v,i)=>{
+    const y = 10 + (h-24)*(i/4);
+    ctx.fillText(v+"%", 4, y+3);
+  });
+
+  if (!cands.length) { return; }
+
+  const maxN = Math.max(1, ...cands.map(c => c.convergence.length ? c.convergence[c.convergence.length-1][0] : 1));
+  cands.forEach((c,ci) => {
+    if (!c.convergence.length) return;
+    ctx.strokeStyle = CONV_COLORS[ci % CONV_COLORS.length];
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    c.convergence.forEach(([n,rate], idx) => {
+      const x = 34 + (w-42) * (n / maxN);
+      const y = 10 + (h-24) * (1 - rate);
+      if (idx===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  });
+
+  // legend
+  let lx = 36, ly = h - 4;
+  ctx.font = "8.5px monospace";
+  cands.forEach((c,ci) => {
+    ctx.fillStyle = CONV_COLORS[ci % CONV_COLORS.length];
+    ctx.fillRect(lx, ly-7, 6, 6);
+    ctx.fillStyle = "#8ba0ae";
+    const txt = c.label.length > 16 ? c.label.slice(0,16)+"…" : c.label;
+    ctx.fillText(txt, lx+9, ly);
+    lx += ctx.measureText(txt).width + 26;
+    if (lx > w - 60){ lx = 36; ly += 11; }
+  });
+}
+
+/* =========================================================
+   7. ASYNC SIMULATION DRIVER (batched with setTimeout)
+   ========================================================= */
+function buildCandidates(teamIndex){
+  const attacker = state.player.team[teamIndex];
+  const oppActive = getActive(state.opponent);
+  const cands = [];
+  attacker.moves.forEach((move, moveIndex) => {
+    oppActive.forEach(target => {
+      const targetTeamIndex = state.opponent.team.indexOf(target);
+      cands.push({
+        moveIndex, targetTeamIndex,
+        label: `${move.name} → ${target.name}`,
+        wins:0, total:0, winRate:0, convergence:[]
+      });
+    });
+  });
+  return cands;
+}
+
+function runSimulationAsync(){
+  if (simRunning) return;
+  const teamIndex = parseInt(document.getElementById("analyzeSelect").value, 10);
+  if (isNaN(teamIndex) || !state.player.team[teamIndex] || state.player.team[teamIndex].status !== "active"){
+    alert("Pick a valid active Pokémon to analyze.");
+    return;
+  }
+  const totalN = Math.max(20, parseInt(document.getElementById("rolloutsInput").value,10) || 400);
+  const batchSize = Math.max(1, parseInt(document.getElementById("batchInput").value,10) || 20);
+
+  const candidates = buildCandidates(teamIndex);
+  if (!candidates.length){ alert("No valid opposing targets right now."); return; }
+
+  const greedy = greedyChoice(state, "player", teamIndex);
+  const greedyMove = state.player.team[teamIndex].moves[greedy.moveIndex];
+  const greedyLabel = { ...greedy, label: `${greedyMove.name} → ${greedy.targetName}` };
+
+  simRunning = true;
+  document.getElementById("btnRunSim").disabled = true;
+  document.getElementById("mcStatus").textContent = "RUNNING…";
+  const baseSnapshot = cloneState(state); // frozen snapshot rollouts branch from
+
+  let candIdx = 0;
+
+  function stepBatch(){
+    if (candIdx >= candidates.length){
+      finish();
+      return;
+    }
+    const c = candidates[candIdx];
+    const remaining = totalN - c.total;
+    const thisBatch = Math.min(batchSize, remaining);
+
+    let wins = 0;
+    for (let i=0;i<thisBatch;i++){
+      if (runSingleRollout(baseSnapshot, teamIndex, c.moveIndex, c.targetTeamIndex)) wins++;
+    }
+    c.wins += wins;
+    c.total += thisBatch;
+    c.winRate = c.wins / c.total;
+    c.convergence.push([c.total, c.winRate]);
+
+    document.getElementById("simProgress").textContent =
+      `Simulating "${c.label}" — ${c.total}/${totalN} rollouts…`;
+
+    // live partial render so chart + bars visibly stabilize
+    mcResults = { candidates, analyzedTeamIndex: teamIndex, greedy: greedyLabel };
+    renderMCPanel();
+
+    if (c.total >= totalN) candIdx++;
+    setTimeout(stepBatch, 0);
+  }
+
+  function finish(){
+    simRunning = false;
+    document.getElementById("btnRunSim").disabled = false;
+    document.getElementById("mcStatus").textContent = "IDLE";
+    document.getElementById("simProgress").textContent = `Done — ${candidates.length} candidates × ${totalN} rollouts.`;
+    mcResults = { candidates, analyzedTeamIndex: teamIndex, greedy: greedyLabel };
+    renderMCPanel();
+  }
+
+  setTimeout(stepBatch, 0);
+}
+
+/* =========================================================
+   8. EVENT WIRING
+   ========================================================= */
+function doPlayTurn(){
+  if (state.winner) return;
+  const pActive = getActive(state.player);
+  const playerActions = pActive.map(p => {
+    const ti = state.player.team.indexOf(p);
+    const a = uiActions[ti] || { moveIndex:0, targetTeamIndex:0 };
+    return { teamIndex: ti, moveIndex: a.moveIndex, targetTeamIndex: a.targetTeamIndex };
+  });
+  const opponentActions = randomActions(state, "opponent");
+  state.log.push({text:`— Turn ${state.turn} —`, cls:"turnmark"});
+  playTurn(state, playerActions, opponentActions);
+  if (state.winner){
+    state.log.push({text: state.winner === "player" ? "🏆 YOU WIN THE BATTLE!" : "💀 YOU LOST THE BATTLE.", cls:"win"});
+  }
+  mcResults = null; // stale after board changes
+  updateUI();
+  renderMCPanel();
+}
+
+function doFillMC(){
+  if (!mcResults) { alert("Run a simulation first."); return; }
+  const teamIndex = mcResults.analyzedTeamIndex;
+  const best = mcResults.candidates.slice().sort((a,b)=>b.winRate-a.winRate)[0];
+  uiActions[teamIndex] = { moveIndex: best.moveIndex, targetTeamIndex: best.targetTeamIndex };
+  renderActionControls();
+}
+
+function doReset(){
+  state = createInitialState();
+  uiActions = {};
+  mcResults = null;
+  updateUI();
+  renderMCPanel();
+}
+
+document.getElementById("btnPlayTurn").addEventListener("click", doPlayTurn);
+document.getElementById("btnFillMC").addEventListener("click", doFillMC);
+document.getElementById("btnReset").addEventListener("click", doReset);
+document.getElementById("btnRunSim").addEventListener("click", runSimulationAsync);
+
+/* =========================================================
+   9. INIT
+   ========================================================= */
+doReset();
+
+})();
+</script>
+</body>
+</html>
