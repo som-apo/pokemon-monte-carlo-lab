@@ -553,21 +553,22 @@ function bestMoveAgainst(mon, target){
   });
   return best;
 }
-function greedyPolicy(side, oppSide){
+function greedyPolicy(sideName, state){
+  const side = state[sideName];
+  const oppName = sideName==='player' ? 'opponent' : 'player';
+  const oppSide = state[oppName];
   const actions=[];
   side.active.forEach((idx,slot)=>{
     const mon = side.mons[idx];
     if(!mon || mon.fainted){ actions.push(null); return; }
     const targets = aliveActives(oppSide);
     if(!targets.length){ actions.push(null); return; }
-    // occasionally protect if low hp
     if(mon.hp/mon.maxHp < 0.25 && Math.random()<0.3){
       actions.push({type:'protect'});
       return;
     }
-    // pick best target+move combo
     let bestScore=-1, bestMove=0, bestTargetSlot=0;
-    targets.forEach((tIdx,ti)=>{
+    targets.forEach(tIdx=>{
       const target = oppSide.mons[tIdx];
       const mvIdx = bestMoveAgainst(mon, target);
       const mv = mon.moves[mvIdx];
@@ -575,16 +576,19 @@ function greedyPolicy(side, oppSide){
       const score = mv.power*mult*(mv.acc/100);
       if(score>bestScore){ bestScore=score; bestMove=mvIdx; bestTargetSlot = oppSide.active.indexOf(tIdx); }
     });
-    actions.push({type:'move', moveIdx:bestMove, targetSide: oppSide===battleState.player?'player':'opponent', targetSlot: bestTargetSlot<0?0:bestTargetSlot});
+    actions.push({type:'move', moveIdx:bestMove, targetSide:oppName, targetSlot: bestTargetSlot<0?0:bestTargetSlot});
   });
   return actions;
 }
 
-function randomPolicy(side, oppSide){
+function randomPolicy(sideName, state){
   // Opponent AI: genuinely random move/target selection (not optimized).
   // This is the policy actually used for the opponent, both in the live battle
   // and inside every Monte Carlo rollout -- so the simulated opponent matches
   // the real one the engine is estimating against.
+  const side = state[sideName];
+  const oppName = sideName==='player' ? 'opponent' : 'player';
+  const oppSide = state[oppName];
   const actions=[];
   side.active.forEach((idx,slot)=>{
     const mon = side.mons[idx];
@@ -605,7 +609,7 @@ function randomPolicy(side, oppSide){
     const mvIdx = usable[Math.floor(Math.random()*usable.length)];
     const tIdx = targets[Math.floor(Math.random()*targets.length)];
     const tSlot = oppSide.active.indexOf(tIdx);
-    actions.push({type:'move', moveIdx:mvIdx, targetSide: oppSide===battleState.player?'player':'opponent', targetSlot: tSlot<0?0:tSlot});
+    actions.push({type:'move', moveIdx:mvIdx, targetSide:oppName, targetSlot: tSlot<0?0:tSlot});
   });
   return actions;
 }
@@ -616,8 +620,8 @@ function runFullBattle(initState, maxTurns){
   let winner = null;
   let turns = 0;
   while(turns < maxTurns){
-    const pActs = greedyPolicy(state.player, state.opponent);
-    const oActs = randomPolicy(state.opponent, state.player);
+    const pActs = greedyPolicy('player', state);
+    const oActs = randomPolicy('opponent', state);
     winner = simulateTurn(state, pActs, oActs);
     turns++;
     if(winner) break;
@@ -635,8 +639,8 @@ function runFullBattleForced(initState, forcedSide, forcedSlot, forcedAction, ma
   state.logging = false;
   let winner = null, turns=0, first=true;
   while(turns < maxTurns){
-    let pActs = greedyPolicy(state.player, state.opponent);
-    let oActs = randomPolicy(state.opponent, state.player);
+    let pActs = greedyPolicy('player', state);
+    let oActs = randomPolicy('opponent', state);
     if(first){
       if(forcedSide==='player') pActs[forcedSlot] = forcedAction;
       else oActs[forcedSlot] = forcedAction;
@@ -914,7 +918,7 @@ document.getElementById('confirmBtn').addEventListener('click', ()=>{
     return null;
   });
   const playerMonNameAtSlot = battleState.player.active.map(idx=>battleState.player.mons[idx].name);
-  const opponentActions = randomPolicy(battleState.opponent, battleState.player);
+  const opponentActions = randomPolicy('opponent', battleState);
   battleState.logging = true;
   const winner = simulateTurn(battleState, playerActions, opponentActions);
   battleState.logging = false;
